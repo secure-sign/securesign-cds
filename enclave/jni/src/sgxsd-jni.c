@@ -442,12 +442,12 @@ JNIEXPORT jobject JNICALL SGXSD_JNI_CLASS_METHOD(nativeNegotiateRequest)
 }
 
 JNIEXPORT jlong JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerStart)
-    (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jint j_max_ab_jids) {
+    (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jint j_max_ab_phones) {
     sgx_enclave_id_t enclave_id = j_enclave_id;
     sgxsd_server_state_handle_t server_state = j_server_state;
 
     sabd_start_args_t sabd_start_args = {
-        .max_ab_jids = j_max_ab_jids,
+        .max_ab_phones = j_max_ab_phones,
     };
     sgx_status_t server_start_res;
     sgx_status_t server_start_ecall_res =
@@ -517,7 +517,7 @@ void sgxsd_jni_server_call(JNIEnv *env, sgx_enclave_id_t enclave_id, sgxsd_serve
 }
 
 JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerCall)
-     (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jint j_ab_jid_count,
+     (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jint j_ab_phone_count,
       jbyteArray j_msg_data, jbyteArray j_msg_iv, jbyteArray j_msg_mac, jbyteArray j_pending_request_id,
       jobject j_callback_obj) {
     if (j_msg_data == NULL ||
@@ -535,7 +535,7 @@ JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerCall)
     sgxsd_server_state_handle_t server_state = j_server_state;
 
     sabd_call_args_t sabd_call_args = {
-        .ab_jid_count = j_ab_jid_count,
+        .ab_phone_count = j_ab_phone_count,
     };
 
     sgxsd_aes_gcm_iv_t msg_iv;
@@ -577,8 +577,8 @@ JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerCall)
 }
 
 JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerStop)
-    (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jobject j_in_jids, jlong j_in_jid_count) {
-    if (j_in_jids == NULL) {
+    (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jobject j_in_phones, jlong j_in_phone_count) {
+    if (j_in_phones == NULL) {
         sgxsd_jni_throw_exception(env, "java/lang/NullPointerException", "()V");
         return;
     }
@@ -588,13 +588,13 @@ JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerStop)
     sgx_enclave_id_t enclave_id = j_enclave_id;
     sgxsd_server_state_handle_t server_state = (sgxsd_server_state_handle_t) j_server_state;
 
-    void *in_jids = (*env)->GetDirectBufferAddress(env, j_in_jids);
-    if (in_jids != NULL) {
-        jlong j_in_jids_capacity = (*env)->GetDirectBufferCapacity(env, j_in_jids);
-        if (j_in_jid_count <= j_in_jids_capacity / 8) {
+    void *in_phones = (*env)->GetDirectBufferAddress(env, j_in_phones);
+    if (in_phones != NULL) {
+        jlong j_in_phones_capacity = (*env)->GetDirectBufferCapacity(env, j_in_phones);
+        if (j_in_phone_count <= j_in_phones_capacity / 8) {
             sabd_stop_args_t sabd_stop_args = {
-                .in_jids = in_jids,
-                .in_jid_count = j_in_jid_count,
+                .in_phones = in_phones,
+                .in_phone_count = j_in_phone_count,
             };
 
             sgx_status_t stop_res;
@@ -613,11 +613,11 @@ JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerStop)
                 return;
             }
         } else {
-            sgxsd_jni_throw_sgxsd_exception(env, "bad_in_jid_count", 0);
+            sgxsd_jni_throw_sgxsd_exception(env, "bad_in_phone_count", 0);
             return;
         }
     } else {
-        sgxsd_jni_throw_sgxsd_exception(env, "bad_in_jids", 0);
+        sgxsd_jni_throw_sgxsd_exception(env, "bad_in_phones", 0);
         return;
     }
 }

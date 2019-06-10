@@ -46,8 +46,8 @@
 #define CACHE_LINE_SIZE 64
 
 #define CHAIN_BLOCK_COUNT 3
-#define CHAIN_BLOCK_JID_COUNT (32 / sizeof(jid_t))
-#define CHAIN_JID_COUNT (CHAIN_BLOCK_COUNT * CHAIN_BLOCK_JID_COUNT)
+#define CHAIN_BLOCK_PHONE_COUNT (32 / sizeof(phone_t))
+#define CHAIN_PHONE_COUNT (CHAIN_BLOCK_COUNT * CHAIN_BLOCK_PHONE_COUNT)
 
 #ifndef SABD_MAX_HASH_TABLE_ORDER
 #define SABD_MAX_HASH_TABLE_ORDER 13
@@ -84,8 +84,8 @@ sabd_lookup_hash_salt_t sabd_lookup_hash_salt(uint64_t hash_salt_64[2]) {
 }
 
 static inline
-hash_slot_idx_t sabd_lookup_hash_slot(jid_t jid, sabd_lookup_hash_salt_t hash_salt, uint32_t hash_table_order) {
-  __m128i hash = _mm_cvtsi64_si128(jid);
+hash_slot_idx_t sabd_lookup_hash_slot(phone_t phone, sabd_lookup_hash_salt_t hash_salt, uint32_t hash_table_order) {
+  __m128i hash = _mm_cvtsi64_si128(phone);
   hash =        _mm_xor_si128(hash, hash_salt.sk[0]);
   hash =     _mm_aesenc_si128(hash, hash_salt.sk[1]);
   hash =     _mm_aesenc_si128(hash, hash_salt.sk[2]);
@@ -101,16 +101,16 @@ hash_slot_idx_t sabd_lookup_hash_slot(jid_t jid, sabd_lookup_hash_salt_t hash_sa
   return _mm_cvtsi128_si32(hash) & ((1 << hash_table_order) - 1);
 }
 
-sgx_status_t sabd_lookup_hash(const jid_t *in_jids, size_t in_jid_count,
-                              const jid_t *ab_jids, hash_slot_idx_t ab_jid_count,
-                              volatile uint8_t *in_ab_jids_result) {
-  const hash_slot_idx_t chain_length = CHAIN_JID_COUNT;
+sgx_status_t sabd_lookup_hash(const phone_t *in_phones, size_t in_phone_count,
+                              const phone_t *ab_phones, hash_slot_idx_t ab_phone_count,
+                              volatile uint8_t *in_ab_phones_result) {
+  const hash_slot_idx_t chain_length = CHAIN_PHONE_COUNT;
 
-  // calculate hash table size = ab_jid_count rounded up to the nearest power of 2
-  uint32_t hash_table_order = likely(ab_jid_count > 1)? _bit_scan_reverse(ab_jid_count - 1) + 1 : 0;
+  // calculate hash table size = ab_phone_count rounded up to the nearest power of 2
+  uint32_t hash_table_order = likely(ab_phone_count > 1)? _bit_scan_reverse(ab_phone_count - 1) + 1 : 0;
 
   // validate hash table size
-  if (unlikely(ab_jid_count == 0)) {
+  if (unlikely(ab_phone_count == 0)) {
     return SGX_SUCCESS;
   }
   if (unlikely(hash_table_order > SABD_MAX_HASH_TABLE_ORDER)) {
@@ -118,31 +118,31 @@ sgx_status_t sabd_lookup_hash(const jid_t *in_jids, size_t in_jid_count,
   }
   _Static_assert((((hash_slot_idx_t) 1) << SABD_MAX_HASH_TABLE_ORDER) > 0, "hash_table_slot_count overflow");
   hash_slot_idx_t hash_table_slot_count = ((hash_slot_idx_t) 1) << hash_table_order;
-  _Static_assert((((hash_slot_idx_t) 1) << SABD_MAX_HASH_TABLE_ORDER) < (UINT32_MAX / chain_length), "hash_table_jid_count overflow");
-  hash_slot_idx_t hash_table_jid_count = hash_table_slot_count * chain_length;
+  _Static_assert((((hash_slot_idx_t) 1) << SABD_MAX_HASH_TABLE_ORDER) < (UINT32_MAX / chain_length), "hash_table_phone_count overflow");
+  hash_slot_idx_t hash_table_phone_count = hash_table_slot_count * chain_length;
 
   // allocate hash table and auxilary tables
-  _Static_assert(hash_table_slot_count < (SIZE_MAX / sizeof(jid_t)) / chain_length, "hashed_ab_jids size overflow");
-  size_t hashed_ab_jids_size = hash_table_jid_count * sizeof(jid_t);
-  jid_t *hashed_ab_jids = memalign(CACHE_LINE_SIZE, hashed_ab_jids_size);
-  if (unlikely(hashed_ab_jids == NULL)) {
+  _Static_assert(hash_table_slot_count < (SIZE_MAX / sizeof(phone_t)) / chain_length, "hashed_ab_phones size overflow");
+  size_t hashed_ab_phones_size = hash_table_phone_count * sizeof(phone_t);
+  phone_t *hashed_ab_phones = memalign(CACHE_LINE_SIZE, hashed_ab_phones_size);
+  if (unlikely(hashed_ab_phones == NULL)) {
     return SGX_ERROR_OUT_OF_MEMORY;
   }
 
-  size_t in_hashed_ab_jids_result_bits_size = hash_table_slot_count * sizeof(uint16_t);
-  volatile uint16_t *in_hashed_ab_jids_result_bits = memalign(CACHE_LINE_SIZE, in_hashed_ab_jids_result_bits_size);
-  _Static_assert(sizeof(*in_hashed_ab_jids_result_bits) * 8 > CHAIN_JID_COUNT, "hash chain fits in result bit array");
-  if (unlikely(in_hashed_ab_jids_result_bits == NULL)) {
-    free(hashed_ab_jids);
+  size_t in_hashed_ab_phones_result_bits_size = hash_table_slot_count * sizeof(uint16_t);
+  volatile uint16_t *in_hashed_ab_phones_result_bits = memalign(CACHE_LINE_SIZE, in_hashed_ab_phones_result_bits_size);
+  _Static_assert(sizeof(*in_hashed_ab_phones_result_bits) * 8 > CHAIN_PHONE_COUNT, "hash chain fits in result bit array");
+  if (unlikely(in_hashed_ab_phones_result_bits == NULL)) {
+    free(hashed_ab_phones);
     return SGX_ERROR_OUT_OF_MEMORY;
   }
-  memset_s(in_hashed_ab_jids_result_bits, in_hashed_ab_jids_result_bits_size, 0, in_hashed_ab_jids_result_bits_size);
+  memset_s(in_hashed_ab_phones_result_bits, in_hashed_ab_phones_result_bits_size, 0, in_hashed_ab_phones_result_bits_size);
 
   // write dummy values to result byte array first, so both true and false force a cache line flush
-  memset_s(in_ab_jids_result, ab_jid_count, 0xFF, ab_jid_count);
+  memset_s(in_ab_phones_result, ab_phone_count, 0xFF, ab_phone_count);
 
   // fill hash table with zeroes to force a cache line flush on write below
-  memset_s(hashed_ab_jids, hashed_ab_jids_size, 0, hashed_ab_jids_size);
+  memset_s(hashed_ab_phones, hashed_ab_phones_size, 0, hashed_ab_phones_size);
 
   // repeat hash table construction until no hash slots overflow
   sabd_lookup_hash_salt_t hash_salt;
@@ -165,7 +165,7 @@ sgx_status_t sabd_lookup_hash(const jid_t *in_jids, size_t in_jid_count,
     // iterate through hash slots
     bool any_hash_slots_overflowed = false;
     for (hash_slot_idx_t hash_slot_idx = 0; likely(hash_slot_idx < hash_table_slot_count); hash_slot_idx++) {
-      // find ab jids to insert into the chain
+      // find ab phones to insert into the chain
       // NB: these variables need to be allocated as registers and will leak information if on the stack!
       register __m256i chain_blocks[CHAIN_BLOCK_COUNT] = {0};
       register __m256i chain_block_masks[] = {
@@ -174,54 +174,54 @@ sgx_status_t sabd_lookup_hash(const jid_t *in_jids, size_t in_jid_count,
         _mm256_set_epi64x(UINT64_MAX - 8, UINT64_MAX - 9, UINT64_MAX - 10, UINT64_MAX - 11),
       };
       hash_slot_idx_t chain_idx = 0;
-      for (hash_slot_idx_t ab_jid_idx = 0; likely(ab_jid_idx < ab_jid_count); ab_jid_idx++) {
-        jid_t ab_jid = ab_jids[ab_jid_idx];
-        __m256i ab_jid_block = _mm256_set1_epi64x(ab_jid);
-        hash_slot_idx_t ab_jid_hash_slot_idx = sabd_lookup_hash_slot(ab_jid, hash_salt, hash_table_order);
+      for (hash_slot_idx_t ab_phone_idx = 0; likely(ab_phone_idx < ab_phone_count); ab_phone_idx++) {
+        phone_t ab_phone = ab_phones[ab_phone_idx];
+        __m256i ab_phone_block = _mm256_set1_epi64x(ab_phone);
+        hash_slot_idx_t ab_phone_hash_slot_idx = sabd_lookup_hash_slot(ab_phone, hash_salt, hash_table_order);
 
         // branch-less-ly test if hash slot matches
         uint64_t hash_slot_matches =
-          (((uint64_t) (((int64_t) (((uint64_t) ab_jid_hash_slot_idx) ^ ((uint64_t) hash_slot_idx))) - 1))
+          (((uint64_t) (((int64_t) (((uint64_t) ab_phone_hash_slot_idx) ^ ((uint64_t) hash_slot_idx))) - 1))
            >> (sizeof(hash_slot_idx) * 8)) & 1;
         // NB: re-work above expression if this assert fails
-        _Static_assert(((int64_t) (((uint64_t) ab_jid_hash_slot_idx) ^ ((uint64_t) hash_slot_idx))) >= 0, "hash_slot_matches overflow");
+        _Static_assert(((int64_t) (((uint64_t) ab_phone_hash_slot_idx) ^ ((uint64_t) hash_slot_idx))) >= 0, "hash_slot_matches overflow");
 
-        // branch-less-ly find out if ab jid is already in chain
-        __m256i chain_eq =                   _mm256_cmpeq_epi64(ab_jid_block, chain_blocks[0]);
-        chain_eq = _mm256_or_si256(chain_eq, _mm256_cmpeq_epi64(ab_jid_block, chain_blocks[1]));
-        chain_eq = _mm256_or_si256(chain_eq, _mm256_cmpeq_epi64(ab_jid_block, chain_blocks[2]));
-        bool jid_not_in_chain = _mm256_testz_pd((__m256d) chain_eq, (__m256d) chain_eq);
+        // branch-less-ly find out if ab phone is already in chain
+        __m256i chain_eq =                   _mm256_cmpeq_epi64(ab_phone_block, chain_blocks[0]);
+        chain_eq = _mm256_or_si256(chain_eq, _mm256_cmpeq_epi64(ab_phone_block, chain_blocks[1]));
+        chain_eq = _mm256_or_si256(chain_eq, _mm256_cmpeq_epi64(ab_phone_block, chain_blocks[2]));
+        bool phone_not_in_chain = _mm256_testz_pd((__m256d) chain_eq, (__m256d) chain_eq);
 
-        // maybe insert ab jid into the chain
-        uint64_t should_insert_jid = hash_slot_matches & jid_not_in_chain;
-        chain_idx += should_insert_jid;
+        // maybe insert ab phone into the chain
+        uint64_t should_insert_phone = hash_slot_matches & phone_not_in_chain;
+        chain_idx += should_insert_phone;
 
-        chain_blocks[0] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[0], (__m256d) ab_jid_block, (__m256d) chain_block_masks[0]);
-        chain_blocks[1] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[1], (__m256d) ab_jid_block, (__m256d) chain_block_masks[1]);
-        chain_blocks[2] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[2], (__m256d) ab_jid_block, (__m256d) chain_block_masks[2]);
+        chain_blocks[0] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[0], (__m256d) ab_phone_block, (__m256d) chain_block_masks[0]);
+        chain_blocks[1] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[1], (__m256d) ab_phone_block, (__m256d) chain_block_masks[1]);
+        chain_blocks[2] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[2], (__m256d) ab_phone_block, (__m256d) chain_block_masks[2]);
 
-        chain_block_masks[0] = _mm256_add_epi64(chain_block_masks[0], _mm256_set1_epi64x(should_insert_jid));
-        chain_block_masks[1] = _mm256_add_epi64(chain_block_masks[1], _mm256_set1_epi64x(should_insert_jid));
-        chain_block_masks[2] = _mm256_add_epi64(chain_block_masks[2], _mm256_set1_epi64x(should_insert_jid));
+        chain_block_masks[0] = _mm256_add_epi64(chain_block_masks[0], _mm256_set1_epi64x(should_insert_phone));
+        chain_block_masks[1] = _mm256_add_epi64(chain_block_masks[1], _mm256_set1_epi64x(should_insert_phone));
+        chain_block_masks[2] = _mm256_add_epi64(chain_block_masks[2], _mm256_set1_epi64x(should_insert_phone));
       }
-      // mask out last processed jid, with non-zero invalid values to force a cache line flush on write
+      // mask out last processed phone, with non-zero invalid values to force a cache line flush on write
       __m256i dummy_block = _mm256_set1_epi8(UINT8_MAX);
       chain_blocks[0] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[0], (__m256d) dummy_block, (__m256d) chain_block_masks[0]);
       chain_blocks[1] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[1], (__m256d) dummy_block, (__m256d) chain_block_masks[1]);
       chain_blocks[2] = (__m256i) _mm256_blendv_pd((__m256d) chain_blocks[2], (__m256d) dummy_block, (__m256d) chain_block_masks[2]);
 
       // write out hash slot chain values
-      __m256i *p_chain_blocks = (__m256i *) &hashed_ab_jids[hash_slot_idx * chain_length];
+      __m256i *p_chain_blocks = (__m256i *) &hashed_ab_phones[hash_slot_idx * chain_length];
       p_chain_blocks[0] = chain_blocks[0];
       p_chain_blocks[1] = chain_blocks[1];
       p_chain_blocks[2] = chain_blocks[2];
 
-      // branch-less-ly trigger a hash table rebuild if too many ab jids hashed to this slot
+      // branch-less-ly trigger a hash table rebuild if too many ab phones hashed to this slot
       any_hash_slots_overflowed |= chain_idx > chain_length;
     }
     hash_table_constructed = !any_hash_slots_overflowed;
     if (unlikely(!hash_table_constructed)) {
-      memset_s(hashed_ab_jids, hashed_ab_jids_size, 0, hashed_ab_jids_size);
+      memset_s(hashed_ab_phones, hashed_ab_phones_size, 0, hashed_ab_phones_size);
     }
     #ifdef UNIT_TESTING
     if (hash_table_constructed) {
@@ -230,60 +230,60 @@ sgx_status_t sabd_lookup_hash(const jid_t *in_jids, size_t in_jid_count,
     #endif
   }
   if (unlikely(!hash_table_constructed)) {
-    free((void *) in_hashed_ab_jids_result_bits);
-    free(hashed_ab_jids);
+    free((void *) in_hashed_ab_phones_result_bits);
+    free(hashed_ab_phones);
     return SGX_ERROR_UNEXPECTED;
   }
 
-  for (size_t in_jid_idx = 0; likely(in_jid_idx < in_jid_count); in_jid_idx++) {
-    jid_t in_jid = in_jids[in_jid_idx];
-    __m256i in_jid_block = _mm256_set1_epi64x(in_jid);
+  for (size_t in_phone_idx = 0; likely(in_phone_idx < in_phone_count); in_phone_idx++) {
+    phone_t in_phone = in_phones[in_phone_idx];
+    __m256i in_phone_block = _mm256_set1_epi64x(in_phone);
 
     // find the hash slot
-    hash_slot_idx_t in_jid_hash_slot_idx = sabd_lookup_hash_slot(in_jid, hash_salt, hash_table_order);
+    hash_slot_idx_t in_phone_hash_slot_idx = sabd_lookup_hash_slot(in_phone, hash_salt, hash_table_order);
 
     // search the hash slot chain in each request's hash table
-    __m256i *chain_blocks = (__m256i *) &hashed_ab_jids[in_jid_hash_slot_idx * chain_length];
+    __m256i *chain_blocks = (__m256i *) &hashed_ab_phones[in_phone_hash_slot_idx * chain_length];
     uint16_t chain_eq_mask =
-      (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(in_jid_block, chain_blocks[0])) << 0) |
-      (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(in_jid_block, chain_blocks[1])) << 4) |
-      (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(in_jid_block, chain_blocks[2])) << 8);
+      (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(in_phone_block, chain_blocks[0])) << 0) |
+      (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(in_phone_block, chain_blocks[1])) << 4) |
+      (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(in_phone_block, chain_blocks[2])) << 8);
 
     // update result bit array, flipping some bits to force a cache line flush
-    volatile uint16_t *chain_result_bits = &in_hashed_ab_jids_result_bits[in_jid_hash_slot_idx];
+    volatile uint16_t *chain_result_bits = &in_hashed_ab_phones_result_bits[in_phone_hash_slot_idx];
     *chain_result_bits = (*chain_result_bits ^ 0xF000) | chain_eq_mask;
   }
 
-  // iterate through request jids, collecting results
-  for (hash_slot_idx_t ab_jid_idx = 0; likely(ab_jid_idx < ab_jid_count); ab_jid_idx++) {
-    jid_t ab_jid = ab_jids[ab_jid_idx];
-    __m256i ab_jid_block = _mm256_set1_epi64x(ab_jid);
-    uint16_t ab_jid_result = 0;
+  // iterate through request phones, collecting results
+  for (hash_slot_idx_t ab_phone_idx = 0; likely(ab_phone_idx < ab_phone_count); ab_phone_idx++) {
+    phone_t ab_phone = ab_phones[ab_phone_idx];
+    __m256i ab_phone_block = _mm256_set1_epi64x(ab_phone);
+    uint16_t ab_phone_result = 0;
 
     for (hash_slot_idx_t hash_slot_idx = 0; likely(hash_slot_idx < hash_table_slot_count); hash_slot_idx++) {
-      __m256i *chain_blocks = (__m256i *) &hashed_ab_jids[hash_slot_idx * chain_length];
+      __m256i *chain_blocks = (__m256i *) &hashed_ab_phones[hash_slot_idx * chain_length];
       uint16_t chain_eq_mask =
-        (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(ab_jid_block, chain_blocks[0])) << 0) |
-        (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(ab_jid_block, chain_blocks[1])) << 4) |
-        (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(ab_jid_block, chain_blocks[2])) << 8);
-      uint16_t chain_result = in_hashed_ab_jids_result_bits[hash_slot_idx] & 0xFFF;
-      ab_jid_result |= chain_eq_mask & chain_result;
+        (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(ab_phone_block, chain_blocks[0])) << 0) |
+        (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(ab_phone_block, chain_blocks[1])) << 4) |
+        (_mm256_movemask_pd((__m256d) _mm256_cmpeq_epi64(ab_phone_block, chain_blocks[2])) << 8);
+      uint16_t chain_result = in_hashed_ab_phones_result_bits[hash_slot_idx] & 0xFFF;
+      ab_phone_result |= chain_eq_mask & chain_result;
     }
 
-    in_ab_jids_result[ab_jid_idx] = !!ab_jid_result;
+    in_ab_phones_result[ab_phone_idx] = !!ab_phone_result;
   }
 
   // write new dummy values to temporary tables (to force erasure of sensitive data)
   for (hash_slot_idx_t hash_slot_idx = 0; likely(hash_slot_idx < hash_table_slot_count); hash_slot_idx++) {
-    in_hashed_ab_jids_result_bits[hash_slot_idx] = 0x8000;
-    volatile __m256i *chain_blocks = (__m256i *) &hashed_ab_jids[hash_slot_idx * chain_length];
+    in_hashed_ab_phones_result_bits[hash_slot_idx] = 0x8000;
+    volatile __m256i *chain_blocks = (__m256i *) &hashed_ab_phones[hash_slot_idx * chain_length];
     chain_blocks[0] = _mm256_setzero_si256();
     chain_blocks[1] = _mm256_setzero_si256();
     chain_blocks[2] = _mm256_setzero_si256();
   }
 
-  free((void *) in_hashed_ab_jids_result_bits);
-  free(hashed_ab_jids);
+  free((void *) in_hashed_ab_phones_result_bits);
+  free(hashed_ab_phones);
   return SGX_SUCCESS;
 }
 
@@ -293,15 +293,15 @@ sgx_status_t sabd_lookup_hash(const jid_t *in_jids, size_t in_jid_count,
 
 typedef struct sabd_msg {
   sgxsd_msg_from_t from;
-  hash_slot_idx_t ab_jid_count;
+  hash_slot_idx_t ab_phone_count;
   struct sabd_msg *prev;
 } sabd_msg_t;
 
 typedef struct sgxsd_server_state {
   sabd_msg_t *msgs;
-  hash_slot_idx_t ab_jid_count;
-  hash_slot_idx_t max_ab_jids;
-  _Alignas(CACHE_LINE_SIZE) jid_t ab_jids[];
+  hash_slot_idx_t ab_phone_count;
+  hash_slot_idx_t max_ab_phones;
+  _Alignas(CACHE_LINE_SIZE) phone_t ab_phones[];
 } sgxsd_server_state_t, sabd_state_t;
 
 sgx_status_t sgxsd_enclave_server_init(const sabd_start_args_t *p_args, sabd_state_t **pp_state) {
@@ -309,8 +309,8 @@ sgx_status_t sgxsd_enclave_server_init(const sabd_start_args_t *p_args, sabd_sta
     return SGX_ERROR_INVALID_PARAMETER;
   }
 
-  _Static_assert(p_args->max_ab_jids < (SIZE_MAX - sizeof(sabd_state_t)) / sizeof(jid_t), "state_size overflow");
-  size_t state_size = sizeof(sabd_state_t) + sizeof(jid_t) * p_args->max_ab_jids;
+  _Static_assert(p_args->max_ab_phones < (SIZE_MAX - sizeof(sabd_state_t)) / sizeof(phone_t), "state_size overflow");
+  size_t state_size = sizeof(sabd_state_t) + sizeof(phone_t) * p_args->max_ab_phones;
   sabd_state_t *p_state = memalign(CACHE_LINE_SIZE, state_size);
   if (p_state == NULL) {
     return SGX_ERROR_OUT_OF_MEMORY;
@@ -318,8 +318,8 @@ sgx_status_t sgxsd_enclave_server_init(const sabd_start_args_t *p_args, sabd_sta
   memset_s(p_state, state_size, 0, state_size);
   *p_state = (sabd_state_t) {
     .msgs = NULL,
-    .ab_jid_count = 0,
-    .max_ab_jids = p_args->max_ab_jids,
+    .ab_phone_count = 0,
+    .max_ab_phones = p_args->max_ab_phones,
   };
   *pp_state = p_state;
   return SGX_SUCCESS;
@@ -334,10 +334,10 @@ sgx_status_t sgxsd_enclave_server_handle_call(const sabd_call_args_t *p_args,
   if (p_args == NULL) {
     return SGX_ERROR_INVALID_PARAMETER;
   }
-  if (p_args->ab_jid_count == 0 ||
-      p_args->ab_jid_count > p_state->max_ab_jids - p_state->ab_jid_count ||
+  if (p_args->ab_phone_count == 0 ||
+      p_args->ab_phone_count > p_state->max_ab_phones - p_state->ab_phone_count ||
       msg.size % 8 != 0 ||
-      msg.size / 8 != p_args->ab_jid_count) {
+      msg.size / 8 != p_args->ab_phone_count) {
     return SGX_ERROR_INVALID_PARAMETER;
   }
   sgx_lfence();
@@ -349,11 +349,11 @@ sgx_status_t sgxsd_enclave_server_handle_call(const sabd_call_args_t *p_args,
   *p_sabd_msg = (sabd_msg_t) {
     .from = from,
     .prev = p_state->msgs,
-    .ab_jid_count = p_args->ab_jid_count,
+    .ab_phone_count = p_args->ab_phone_count,
   };
   p_state->msgs = p_sabd_msg;
-  memcpy(&p_state->ab_jids[p_state->ab_jid_count], msg.data, msg.size);
-  p_state->ab_jid_count += p_sabd_msg->ab_jid_count;
+  memcpy(&p_state->ab_phones[p_state->ab_phone_count], msg.data, msg.size);
+  p_state->ab_phone_count += p_sabd_msg->ab_phone_count;
 
   memset_s(&from, sizeof(from), 0, sizeof(from));
 
@@ -365,46 +365,46 @@ sgx_status_t sgxsd_enclave_server_terminate(const sabd_stop_args_t *p_args, sabd
   }
 
   sgx_status_t validate_args_res = SGX_ERROR_INVALID_PARAMETER;
-  size_t validated_in_jid_count = 0;
+  size_t validated_in_phone_count = 0;
   if (p_args == NULL) {
     validate_args_res = SGX_ERROR_INVALID_PARAMETER;
   } else {
-    // make sure in_jids is outside of the enclave
-    size_t in_jids_size = p_args->in_jid_count * sizeof(p_args->in_jids[0]);
-    if (p_args->in_jid_count > SIZE_MAX / sizeof(p_args->in_jids[0]) ||
-        sgx_is_outside_enclave(p_args->in_jids, in_jids_size) != 1) {
+    // make sure in_phones is outside of the enclave
+    size_t in_phones_size = p_args->in_phone_count * sizeof(p_args->in_phones[0]);
+    if (p_args->in_phone_count > SIZE_MAX / sizeof(p_args->in_phones[0]) ||
+        sgx_is_outside_enclave(p_args->in_phones, in_phones_size) != 1) {
       validate_args_res = SGX_ERROR_INVALID_PARAMETER;
     } else {
-      validated_in_jid_count = in_jids_size / sizeof(p_args->in_jids[0]);
+      validated_in_phone_count = in_phones_size / sizeof(p_args->in_phones[0]);
       validate_args_res = SGX_SUCCESS;
     }
   }
 
   sgx_status_t lookup_res;
   sgx_status_t replies_res = SGX_SUCCESS;
-  if (p_state->ab_jid_count != 0) {
-    uint8_t *in_ab_jids_result = malloc(p_state->ab_jid_count);
+  if (p_state->ab_phone_count != 0) {
+    uint8_t *in_ab_phones_result = malloc(p_state->ab_phone_count);
     if (validate_args_res != SGX_SUCCESS) {
       // failed to validate lookup args
       lookup_res = validate_args_res;
-    } else if (in_ab_jids_result != NULL) {
-      // prevent speculative execution in case in_jids lies inside enclave
+    } else if (in_ab_phones_result != NULL) {
+      // prevent speculative execution in case in_phones lies inside enclave
       sgx_lfence();
 
-      lookup_res = sabd_lookup_hash(p_args->in_jids, validated_in_jid_count,
-                                    p_state->ab_jids, p_state->ab_jid_count,
-                                    in_ab_jids_result);
+      lookup_res = sabd_lookup_hash(p_args->in_phones, validated_in_phone_count,
+                                    p_state->ab_phones, p_state->ab_phone_count,
+                                    in_ab_phones_result);
     } else {
       lookup_res = SGX_ERROR_OUT_OF_MEMORY;
     }
 
-    hash_slot_idx_t ab_jid_idx = p_state->ab_jid_count;
+    hash_slot_idx_t ab_phone_idx = p_state->ab_phone_count;
     for (sabd_msg_t *p_msg = p_state->msgs; p_msg != NULL;) {
       if (lookup_res == SGX_SUCCESS) {
-        ab_jid_idx -= p_msg->ab_jid_count;
+        ab_phone_idx -= p_msg->ab_phone_count;
         sgxsd_msg_buf_t reply_buf = {
-          .data = &in_ab_jids_result[ab_jid_idx],
-          .size = p_msg->ab_jid_count,
+          .data = &in_ab_phones_result[ab_phone_idx],
+          .size = p_msg->ab_phone_count,
         };
         // sgxsd_enclave_server_reply overwrites reply_buf.data
         sgx_status_t reply_res = sgxsd_enclave_server_reply(reply_buf, p_msg->from);
@@ -419,12 +419,12 @@ sgx_status_t sgxsd_enclave_server_terminate(const sabd_stop_args_t *p_args, sabd
       p_msg = p_prev_msg;
     }
 
-    free(in_ab_jids_result);
+    free(in_ab_phones_result);
   } else {
     lookup_res = validate_args_res;
   }
 
-  size_t state_size = sizeof(sabd_state_t) + sizeof(jid_t) * p_state->max_ab_jids;
+  size_t state_size = sizeof(sabd_state_t) + sizeof(phone_t) * p_state->max_ab_phones;
   memset_s(p_state, state_size, 0, state_size);
   free(p_state);
   if (lookup_res == SGX_SUCCESS) {
