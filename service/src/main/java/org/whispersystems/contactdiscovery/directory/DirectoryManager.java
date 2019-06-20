@@ -23,7 +23,6 @@ import com.codahale.metrics.Timer;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import io.dropwizard.lifecycle.Managed;
-import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -156,12 +155,12 @@ public class DirectoryManager implements Managed {
     }
   }
 
-  public Pair<ByteBuffer, Long> getAddressList() throws DirectoryUnavailableException {
+  public Pair<Pair<ByteBuffer, ByteBuffer>, Long> getAddressList() throws DirectoryUnavailableException {
     if (!isBuilt()) {
       throw new DirectoryUnavailableException();
     }
     DirectoryHashSet directoryHashSet = getCurrentDirectoryHashSet();
-    return new ImmutablePair<>(directoryHashSet.getDirectByteBuffer(), directoryHashSet.capacity());
+    return Pair.of(directoryHashSet.getDirectByteBuffers(), directoryHashSet.capacity());
   }
 
   @Override

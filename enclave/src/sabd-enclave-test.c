@@ -52,6 +52,7 @@ sabd_stop_args_t *p_empty_stop_args;
 sabd_stop_args_t *p_valid_stop_args;
 
 phone_t *test_in_phones;
+uuid_t *test_in_uuids;
 const size_t test_in_phone_count = 1000*1000;
 uint32_t benchmark_in_phone_count_steps = 0;
 size_t test_in_phone_count_step_factor = 10;
@@ -61,7 +62,7 @@ const uint32_t test_ab_phone_count = 2048;
 uint32_t benchmark_ab_phone_count_steps = 0;
 uint32_t test_ab_phone_count_step_factor = 2;
 
-uint8_t *test_expected_in_ab_phones_result;
+uuid_t *test_expected_in_ab_phones_result;
 
 uint32_t test_hash_table_overflow_ab_phone_count   = 16;
 // check overflow rate < 1 / 1e6 = 0.0001%
@@ -70,19 +71,29 @@ uint32_t test_hash_table_overflow_run_count      = 1e6;
 // in benchmark mode, check overflow rate < 1 / 1e6 = 0.0001%
 uint32_t benchmark_hash_table_overflow_run_count = 1e7;
 
-void setup_sabd_lookup_test(size_t in_phone_count, phone_t *ab_phones, uint32_t ab_phone_count, uint8_t *expected_in_ab_phones_result) {
+extern unsigned long long test_total_tsc;
+
+void setup_sabd_lookup_test(size_t in_phone_count, phone_t *ab_phones, uint32_t ab_phone_count, uuid_t *expected_in_ab_phones_result) {
   for (uint32_t ab_phone_idx = 0; ab_phone_idx < ab_phone_count; ab_phone_idx++) {
     long int rand;
     mrand48_r(&test_drand48_data, &rand);
     uint32_t rand_idx = rand % (in_phone_count * 2);
     if (rand_idx < in_phone_count) {
       ab_phones[ab_phone_idx] = test_in_phones[rand_idx];
-      expected_in_ab_phones_result[ab_phone_idx] = 1;
+      expected_in_ab_phones_result[ab_phone_idx] = test_in_uuids[rand_idx];
     } else {
       ab_phones[ab_phone_idx] = 1;
-      expected_in_ab_phones_result[ab_phone_idx] = 0;
+      expected_in_ab_phones_result[ab_phone_idx] = (uuid_t) { .data64 = {0, 0} };
     }
   }
+}
+
+static inline uint64_t test_rand64() {
+  long int rand;
+  mrand48_r(&test_drand48_data, &rand);
+  uint64_t lower = rand & UINT32_MAX;
+  mrand48_r(&test_drand48_data, &rand);
+  return lower | ((long unsigned int) rand) << 32;
 }
 
 void setup_tests(void **state) {
@@ -97,20 +108,17 @@ void setup_tests(void **state) {
     max_in_phone_count *= test_in_phone_count_step_factor;
   }
   test_in_phones = memalign(64, max_in_phone_count * sizeof(phone_t));
+  test_in_uuids = memalign(64, max_in_phone_count * sizeof(uuid_t));
   for (size_t test_in_phone_idx = 0; test_in_phone_idx < max_in_phone_count; test_in_phone_idx++) {
-    long int rand;
-    mrand48_r(&test_drand48_data, &rand);
-    phone_t phone = rand;
-    mrand48_r(&test_drand48_data, &rand);
-    phone |= ((long unsigned int) rand) << 32;
-    test_in_phones[test_in_phone_idx] = phone;
+    test_in_phones[test_in_phone_idx] = test_rand64();
+    test_in_uuids[test_in_phone_idx] = (uuid_t) { .data64 = { test_rand64(), test_rand64() } };
   }
 
   if (benchmark) {
     benchmark_ab_phone_count_steps = BENCHMARK_AB_PHONE_COUNT_STEPS;
   }
   test_ab_phones = memalign(64, test_ab_phone_count * sizeof(phone_t));
-  test_expected_in_ab_phones_result = test_malloc(test_ab_phone_count);
+  test_expected_in_ab_phones_result = test_malloc(test_ab_phone_count * sizeof(uuid_t));
   setup_sabd_lookup_test(test_in_phone_count, test_ab_phones, test_ab_phone_count, test_expected_in_ab_phones_result);
 
   // server_start test arguments
@@ -119,20 +127,21 @@ void setup_tests(void **state) {
 
   // server_call test arguments
   valid_msg_buf = (sgxsd_msg_buf_t) { .data = (uint8_t *) test_in_phones, .size = sizeof(phone_t) };
-  valid_reply = (sgxsd_msg_buf_t) { .data = test_expected_in_ab_phones_result, .size = 1 };
+  valid_reply = (sgxsd_msg_buf_t) { .data = (uint8_t *) test_expected_in_ab_phones_result, .size = sizeof(uuid_t) };
   dummy_msg_from = (sgxsd_msg_from_t) { .tag = { .p_tag = NULL }, .server_key = {{0}}};
   p_valid_call_args = test_malloc(sizeof(sabd_call_args_t));
   *p_valid_call_args = (sabd_call_args_t) { .ab_phone_count = 1 };
 
   // server_terminate test arguments
   p_empty_stop_args = test_malloc(sizeof(sabd_stop_args_t));
-  *p_empty_stop_args = (sabd_stop_args_t) { .in_phones = NULL, .in_phone_count = 0 };
+  *p_empty_stop_args = (sabd_stop_args_t) { .in_phones = NULL, .in_uuids = NULL, .in_phone_count = 0 };
   p_valid_stop_args = test_malloc(sizeof(sabd_stop_args_t));
-  *p_valid_stop_args = (sabd_stop_args_t) { .in_phones = test_in_phones, .in_phone_count = 1 };
+  *p_valid_stop_args = (sabd_stop_args_t) { .in_phones = test_in_phones, .in_uuids = test_in_uuids, .in_phone_count = 1 };
 }
 
 void teardown_tests(void **state) {
   test_free(test_in_phones);
+  test_free(test_in_uuids);
   test_free(test_ab_phones);
   test_free(test_expected_in_ab_phones_result);
   test_free(p_empty_start_args);
@@ -188,6 +197,8 @@ void test_sabd_server_call(sgx_status_t res, sgxsd_msg_buf_t *expected_reply,
 
 void test_sabd_server_term(sgx_status_t res, sabd_stop_args_t args) {
   assert_in_range(args.in_phone_count, 0, SIZE_MAX / sizeof(args.in_phones[0]));
+  assert_in_range(args.in_phone_count, 0, SIZE_MAX / sizeof(args.in_uuids[0]));
+  will_return(sgx_is_outside_enclave, (int) { 1 });
   will_return(sgx_is_outside_enclave, (int) { 1 });
 
   // allocate on heap to get -fsanitize=address instrumentation
@@ -212,16 +223,37 @@ void test_sabd_server_in_phones_outside_enclave(void **state) {
   assert_int_equal(SGX_ERROR_INVALID_PARAMETER, sgxsd_enclave_server_terminate(p_valid_stop_args, p_server_state));
   p_server_state = NULL;
 }
+void test_sabd_server_in_uuids_outside_enclave(void **state) {
+  test_sabd_server_init(SGX_SUCCESS, *p_empty_start_args);
+  will_return(sgx_is_outside_enclave, (int) { 1 });
+  will_return(sgx_is_outside_enclave, (int) { 0 });
+  assert_int_equal(SGX_ERROR_INVALID_PARAMETER, sgxsd_enclave_server_terminate(p_valid_stop_args, p_server_state));
+  p_server_state = NULL;
+}
 void test_sabd_server_in_phones_overflow(void **state) {
   test_sabd_server_init(SGX_SUCCESS, *p_empty_start_args);
   sabd_stop_args_t *p_in_phone_overflow_stop_args = malloc(sizeof(sabd_stop_args_t));
   *p_in_phone_overflow_stop_args = (sabd_stop_args_t) {
     .in_phones = p_valid_stop_args->in_phones,
+    .in_uuids = p_valid_stop_args->in_uuids,
     .in_phone_count = p_valid_stop_args->in_phone_count + SIZE_MAX / sizeof(p_valid_stop_args->in_phones[0]),
   };
   assert_int_equal(SGX_ERROR_INVALID_PARAMETER, sgxsd_enclave_server_terminate
                    (p_in_phone_overflow_stop_args, p_server_state));
   test_free(p_in_phone_overflow_stop_args);
+  p_server_state = NULL;
+}
+void test_sabd_server_in_uuids_overflow(void **state) {
+  test_sabd_server_init(SGX_SUCCESS, *p_empty_start_args);
+  sabd_stop_args_t *p_in_uuid_overflow_stop_args = malloc(sizeof(sabd_stop_args_t));
+  *p_in_uuid_overflow_stop_args = (sabd_stop_args_t) {
+    .in_phones = p_valid_stop_args->in_phones,
+    .in_uuids = p_valid_stop_args->in_uuids,
+    .in_phone_count = p_valid_stop_args->in_phone_count + SIZE_MAX / sizeof(p_valid_stop_args->in_uuids[0]),
+  };
+  assert_int_equal(SGX_ERROR_INVALID_PARAMETER, sgxsd_enclave_server_terminate
+                   (p_in_uuid_overflow_stop_args, p_server_state));
+  test_free(p_in_uuid_overflow_stop_args);
   p_server_state = NULL;
 }
 
@@ -321,30 +353,28 @@ void test_sabd_server_reply_fail(void **state) {
   test_sabd_server_term(SGX_ERROR_UNEXPECTED, *p_empty_stop_args);
 }
 
-sgx_status_t sabd_lookup_hash(const phone_t *in_phones, size_t in_phone_count,
+sgx_status_t sabd_lookup_hash(const phone_t *in_phones, uuid_t *in_uuids, size_t in_phone_count,
                               const phone_t *ab_phones, uint32_t ab_phone_count,
-                              volatile uint8_t *in_ab_phones_result);
+                              volatile uuid_t *in_ab_phones_result);
 static
 void test_sabd_lookup_batch_too_large(void **state) {
   uint32_t ab_phone_count = ((uint32_t) { 1 } << 14) + 1;
   phone_t *ab_phones = test_calloc(ab_phone_count, sizeof(phone_t));
-  uint8_t *in_ab_phones_result = test_malloc(ab_phone_count);
+  uuid_t *in_ab_phones_result = test_malloc(ab_phone_count * sizeof(uuid_t));
   assert_int_equal(SGX_ERROR_INVALID_PARAMETER, sabd_lookup_hash
-                   (test_in_phones, test_in_phone_count, ab_phones, ab_phone_count, in_ab_phones_result));
+                   (test_in_phones, test_in_uuids, test_in_phone_count, ab_phones, ab_phone_count, in_ab_phones_result));
   test_free(in_ab_phones_result);
   test_free(ab_phones);
 }
-void test_sabd_lookup(size_t in_phone_count, phone_t *ab_phones, uint32_t ab_phone_count, const uint8_t *expected_in_ab_phones_result) {
-  uint8_t *in_ab_phones_result = test_calloc(ab_phone_count, 1);
+void test_sabd_lookup(size_t in_phone_count, phone_t *ab_phones, uint32_t ab_phone_count, const uuid_t *expected_in_ab_phones_result) {
+  size_t in_ab_phones_result_size = ab_phone_count * sizeof(uuid_t);
+  uuid_t *in_ab_phones_result = test_calloc(in_ab_phones_result_size, 1);
   if (ab_phone_count != 0) {
     expect_any(sabd_lookup_hash, hash_table_tries);
   }
   assert_int_equal(SGX_SUCCESS, sabd_lookup_hash
-                   (test_in_phones, in_phone_count, ab_phones, ab_phone_count, in_ab_phones_result));
-  for (uint32_t ab_phone_idx = 0; ab_phone_idx < ab_phone_count; ab_phone_idx++) {
-    in_ab_phones_result[ab_phone_idx] = !!(in_ab_phones_result[ab_phone_idx]);
-  }
-  assert_memory_equal(in_ab_phones_result, expected_in_ab_phones_result, ab_phone_count);
+                   (test_in_phones, test_in_uuids, in_phone_count, ab_phones, ab_phone_count, in_ab_phones_result));
+  assert_memory_equal(in_ab_phones_result, expected_in_ab_phones_result, in_ab_phones_result_size);
   test_free(in_ab_phones_result);
 }
 static
@@ -353,8 +383,8 @@ void test_sabd_lookup_many_duplicates(void **state) {
   size_t ab_phones_size = ab_phone_count * sizeof(phone_t);
   phone_t *ab_phones = test_malloc(ab_phones_size);
   memcpy(ab_phones, test_ab_phones, ab_phones_size);
-  uint8_t *expected_in_ab_phones_result = test_malloc(ab_phone_count);
-  memcpy(expected_in_ab_phones_result, test_expected_in_ab_phones_result, ab_phone_count);
+  uuid_t *expected_in_ab_phones_result = test_malloc(ab_phone_count * sizeof(uuid_t));
+  memcpy(expected_in_ab_phones_result, test_expected_in_ab_phones_result, ab_phone_count * sizeof(uuid_t));
   for (uint32_t ab_phone_idx = 0; ab_phone_idx < ab_phone_count; ab_phone_idx += 2) {
     ab_phones[ab_phone_idx] = ab_phones[0];
     expected_in_ab_phones_result[ab_phone_idx] = expected_in_ab_phones_result[0];
@@ -367,12 +397,14 @@ static
 void test_sabd_lookup_small(bool use_in_phones) {
   uint32_t max_ab_phone_count = 32;
   phone_t *ab_phones = test_malloc(max_ab_phone_count * sizeof(phone_t));
-  uint8_t *expected_in_ab_phones_result = test_malloc(max_ab_phone_count);
+  uuid_t *expected_in_ab_phones_result = test_malloc(max_ab_phone_count * sizeof(uuid_t));
   for (uint32_t test_ab_phone_idx = 0, ab_phone_idx = 0;
        test_ab_phone_idx < test_ab_phone_count && ab_phone_idx < max_ab_phone_count;
        test_ab_phone_idx++) {
-    if (test_expected_in_ab_phones_result[test_ab_phone_idx] == use_in_phones) {
-      expected_in_ab_phones_result[ab_phone_idx] = use_in_phones;
+    bool test_expected_in_ab_phone_result = (test_expected_in_ab_phones_result[test_ab_phone_idx].data64[0] ||
+                                             test_expected_in_ab_phones_result[test_ab_phone_idx].data64[1]);
+    if (test_expected_in_ab_phone_result == use_in_phones) {
+      expected_in_ab_phones_result[ab_phone_idx] = test_expected_in_ab_phones_result[test_ab_phone_idx];
       ab_phones[ab_phone_idx++] = test_ab_phones[test_ab_phone_idx];
     }
   }
@@ -410,7 +442,7 @@ int test_sabd_lookup_hash_table_overflow_check(LargestIntegralType value, Larges
 static
 void test_sabd_lookup_hash_table_overflow(void **state) {
   uint32_t ab_phone_count = test_hash_table_overflow_ab_phone_count;
-  uint8_t *in_ab_phones_result = test_malloc(ab_phone_count);
+  uuid_t *in_ab_phones_result = test_malloc(ab_phone_count * sizeof(uuid_t));
   uint32_t overflow_count = 0;
   uint32_t run_count = benchmark? benchmark_hash_table_overflow_run_count : test_hash_table_overflow_run_count;
   // divide (rounded up) by how many times we're going to run this test in total
@@ -419,7 +451,7 @@ void test_sabd_lookup_hash_table_overflow(void **state) {
                 test_sabd_lookup_hash_table_overflow_check, cast_to_largest_integral_type(&overflow_count),
                 NULL, run_count);
   for (uint32_t run_idx = 0; run_idx < run_count; run_idx++) {
-    assert_int_equal(SGX_SUCCESS, sabd_lookup_hash(test_in_phones, 0, test_ab_phones, ab_phone_count, in_ab_phones_result));
+    assert_int_equal(SGX_SUCCESS, sabd_lookup_hash(test_in_phones, test_in_uuids, 0, test_ab_phones, ab_phone_count, in_ab_phones_result));
   }
   print_message("finished %zu %zu-phone ab lookups with %zu overflows (< %g%%)\n",
                 run_count, ab_phone_count, overflow_count, (overflow_count + 1) * 100.0 / run_count);
@@ -434,7 +466,7 @@ void test_sabd_lookup_benchmark(void **state) {
     uint32_t ab_phone_count = test_ab_phone_count;
     for (uint32_t ab_phone_count_step = 0; ab_phone_count_step < benchmark_ab_phone_count_steps; ab_phone_count_step++) {
       phone_t *ab_phones = memalign(64, ab_phone_count * sizeof(phone_t));
-      uint8_t *expected_in_ab_phones_result = test_malloc(ab_phone_count);
+      uuid_t *expected_in_ab_phones_result = test_malloc(ab_phone_count * sizeof(uuid_t));
       setup_sabd_lookup_test(in_phone_count, ab_phones, ab_phone_count, expected_in_ab_phones_result);
     
       struct timespec lookup_start;
@@ -446,8 +478,8 @@ void test_sabd_lookup_benchmark(void **state) {
       clock_gettime(CLOCK_THREAD_CPUTIME_ID, &lookup_end);
       double lookup_elapsed =
         (lookup_end.tv_sec + lookup_end.tv_nsec / 1e9) - (lookup_start.tv_sec + lookup_start.tv_nsec / 1e9);
-      print_message("finished %5zu phone ab lookup on %10zu phones in %0.3gs (%'#0.4gs / ab phone)\n",
-                    ab_phone_count, in_phone_count, lookup_elapsed, lookup_elapsed / ab_phone_count);
+      print_message("finished %5zu phone ab lookup on %10zu phones in %05.3fs (%#05.3es / ab phone) (%0llu cycles / phone)\n",
+                    ab_phone_count, in_phone_count, lookup_elapsed, lookup_elapsed / ab_phone_count, test_total_tsc / in_phone_count);
 
       test_free(ab_phones);
       test_free(expected_in_ab_phones_result);
@@ -471,9 +503,13 @@ sgx_status_t sgxsd_enclave_server_reply(sgxsd_msg_buf_t reply_buf, sgxsd_msg_fro
 #define unit_test_sabd_server(test) unit_test_setup_teardown(test, setup_sabd_server_test, teardown_sabd_server_test)
 
 int main(int argc, char *argv[]) {
+  bool benchmark_only = false;
   for (int arg_idx = 1; arg_idx < argc; arg_idx++) {
     if (strcmp(argv[arg_idx], "--benchmark") == 0) {
       benchmark = true;
+    } else if (strcmp(argv[arg_idx], "--benchmark-only") == 0) {
+      benchmark = true;
+      benchmark_only = true;
     } else {
       print_error("Usage: %s [--benchmark]\n", argv[0]);
       return 1;
@@ -507,11 +543,23 @@ int main(int argc, char *argv[]) {
     unit_test(test_sabd_lookup_benchmark),
     unit_test_teardown(tests, teardown_tests),
   };
+
+  UnitTest benchmark_only_tests[] = {
+    unit_test_setup(tests, setup_tests),
+    unit_test(test_sabd_lookup_benchmark),
+    unit_test_teardown(tests, teardown_tests),
+  };
+
   if (benchmark) {
     test_run_count = BENCHMARK_TEST_RUN_COUNT;
   }
-  for (int test_run = 0; test_run < test_run_count; test_run++) {
-    int res = run_tests(tests) != 0;
+  for (uint32_t test_run = 0; test_run < test_run_count; test_run++) {
+    int res;
+    if (benchmark_only) {
+      res = run_tests(benchmark_only_tests) != 0;
+    } else {
+      res = run_tests(tests) != 0;
+    }
     if (res != 0) {
       return res;
     }

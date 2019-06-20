@@ -579,7 +579,7 @@ JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerCall)
 }
 
 JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerStop)
-    (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jobject j_in_phones, jlong j_in_phone_count) {
+    (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jobject j_in_phones, jobject j_in_uuids, jlong j_in_phone_count) {
     if (j_in_phones == NULL) {
         sgxsd_jni_throw_exception(env, "java/lang/NullPointerException", "()V");
         return;
@@ -591,11 +591,15 @@ JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerStop)
     sgxsd_server_state_handle_t server_state = (sgxsd_server_state_handle_t) j_server_state;
 
     void *in_phones = (*env)->GetDirectBufferAddress(env, j_in_phones);
-    if (in_phones != NULL) {
+    void *in_uuids  = (*env)->GetDirectBufferAddress(env, j_in_uuids);
+    if (in_phones != NULL && in_uuids != NULL) {
         jlong j_in_phones_capacity = (*env)->GetDirectBufferCapacity(env, j_in_phones);
-        if (j_in_phone_count <= j_in_phones_capacity / 8) {
+        jlong j_in_uuids_capacity  = (*env)->GetDirectBufferCapacity(env, j_in_uuids);
+        if (j_in_phone_count <= j_in_phones_capacity / ((jlong) sizeof(*(((sabd_stop_args_t *) 0)->in_phones))) &&
+            j_in_phone_count <= j_in_uuids_capacity  / ((jlong) sizeof(*(((sabd_stop_args_t *) 0)->in_uuids)))) {
             sabd_stop_args_t sabd_stop_args = {
                 .in_phones = in_phones,
+                .in_uuids = in_uuids,
                 .in_phone_count = j_in_phone_count,
             };
 
