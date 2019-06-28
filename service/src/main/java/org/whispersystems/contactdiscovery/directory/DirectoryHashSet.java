@@ -21,6 +21,7 @@ import org.whispersystems.contactdiscovery.util.Util;
 
 import java.nio.ByteBuffer;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Hash table that contains the directory of all registered users
@@ -77,16 +78,9 @@ public class DirectoryHashSet {
     return elementCount;
   }
 
-  public boolean add(long element) {
-    return insert(element, new byte[VALUE_SIZE]);
-  }
-
-  public boolean insert(long element, byte[] value) {
+  public boolean insert(long element, UUID value) {
     if (element <= 0) {
       throw new IllegalArgumentException("bad number: " + element);
-    }
-    if (value == null || value.length != VALUE_SIZE) {
-      throw new IllegalArgumentException("bad value of length " + Optional.ofNullable(value).map(nonNullValue -> nonNullValue.length));
     }
     boolean added;
     boolean needsRehash;
@@ -171,9 +165,8 @@ public class DirectoryHashSet {
         synchronized (writeLock) {
           long element = curBuffer.getLong((int) curBufferIdx);
           if (element > 0) {
-            byte[] value = new byte[VALUE_SIZE];
-            curValueBuffer.position((int) curValueBufferIdx);
-            curValueBuffer.get(value);
+            UUID value = new UUID(curValueBuffer.getLong((int) curValueBufferIdx + 0),
+                                  curValueBuffer.getLong((int) curValueBufferIdx + 8));
             long newBufferOldSlotValue = addToBuffer(newBuffer.get(), newValueBuffer.get(), element, value);
             if (newBufferOldSlotValue == 0) {
               newBufferUsedSlotCount++;
@@ -208,7 +201,7 @@ public class DirectoryHashSet {
     return (int) (element % slotCount);
   }
 
-  private static long addToBuffer(ByteBuffer buffer, ByteBuffer valueBuffer, long element, byte[] value) {
+  private static long addToBuffer(ByteBuffer buffer, ByteBuffer valueBuffer, long element, UUID value) {
     int  slotCount    = buffer.capacity() / KEY_SIZE;
     int  slotIdx      = hashElement(slotCount, element);
     int  startSlotIdx = slotIdx;
@@ -240,8 +233,13 @@ public class DirectoryHashSet {
       slotValue = buffer.getLong(slotIdx * KEY_SIZE);
     }
     buffer.putLong(freeSlotIdx * KEY_SIZE, element);
-    valueBuffer.position(freeSlotIdx * VALUE_SIZE);
-    valueBuffer.put(value);
+    if (value != null) {
+      valueBuffer.putLong(freeSlotIdx * VALUE_SIZE + 0, value.getMostSignificantBits());
+      valueBuffer.putLong(freeSlotIdx * VALUE_SIZE + 8, value.getLeastSignificantBits());
+    } else {
+      valueBuffer.putLong(freeSlotIdx * VALUE_SIZE + 0, 0);
+      valueBuffer.putLong(freeSlotIdx * VALUE_SIZE + 8, 0);
+    }
     return freeSlotValue;
   }
 
