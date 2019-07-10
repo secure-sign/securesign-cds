@@ -126,11 +126,19 @@ void setup_tests(void **state) {
   *p_empty_start_args = (sabd_start_args_t) { .max_ab_phones = 0 };
 
   // server_call test arguments
-  valid_msg_buf = (sgxsd_msg_buf_t) { .data = (uint8_t *) test_in_phones, .size = sizeof(phone_t) };
-  valid_reply = (sgxsd_msg_buf_t) { .data = (uint8_t *) test_expected_in_ab_phones_result, .size = sizeof(uuid_t) };
+  size_t valid_msg_buf_size = sizeof(phone_t) + sizeof(((sabd_ratelimit_nonce_t *) 0)->data);
+  valid_msg_buf = (sgxsd_msg_buf_t) { .data = test_malloc(valid_msg_buf_size), .size = valid_msg_buf_size };
+  memcpy(&valid_msg_buf.data[0], test_in_phones, sizeof(phone_t));
+  memset(&valid_msg_buf.data[sizeof(phone_t)], 0, valid_msg_buf.size - sizeof(phone_t));
+
+  size_t valid_reply_data_size = 1 + sizeof(uuid_t);
+  valid_reply = (sgxsd_msg_buf_t) { .data = test_malloc(valid_reply_data_size), .size = valid_reply_data_size };
+  valid_reply.data[0] = 0;
+  memcpy(&valid_reply.data[1], (uint8_t *) test_in_uuids, sizeof(uuid_t));
+
   dummy_msg_from = (sgxsd_msg_from_t) { .tag = { .p_tag = NULL }, .server_key = {{0}}};
   p_valid_call_args = test_malloc(sizeof(sabd_call_args_t));
-  *p_valid_call_args = (sabd_call_args_t) { .ab_phone_count = 1 };
+  *p_valid_call_args = (sabd_call_args_t) { .ab_phone_count = 1, .ratelimit_set_slot_count = 0, .p_ratelimit_set = NULL };
 
   // server_terminate test arguments
   p_empty_stop_args = test_malloc(sizeof(sabd_stop_args_t));
@@ -144,6 +152,8 @@ void teardown_tests(void **state) {
   test_free(test_in_uuids);
   test_free(test_ab_phones);
   test_free(test_expected_in_ab_phones_result);
+  test_free(valid_msg_buf.data);
+  test_free(valid_reply.data);
   test_free(p_empty_start_args);
   test_free(p_valid_call_args);
   test_free(p_empty_stop_args);
@@ -176,18 +186,39 @@ void test_sabd_server_call(sgx_status_t res, sgxsd_msg_buf_t *expected_reply,
                            sabd_call_args_t args, sgxsd_msg_buf_t msg, sgxsd_msg_from_t from) {
 
   // allocate on heap to get -fsanitize=address instrumentation
+  sabd_ratelimit_set_t *p_ratelimit_set = NULL;
+  size_t ratelimit_set_size = sizeof(*args.p_ratelimit_set) + args.ratelimit_set_slot_count * sizeof(args.p_ratelimit_set->slots[0]);
+  if (args.p_ratelimit_set != NULL) {
+    p_ratelimit_set = test_malloc(ratelimit_set_size);
+    memcpy(p_ratelimit_set, args.p_ratelimit_set, ratelimit_set_size);
+
+    will_return(sgx_is_outside_enclave, (int) { 1 });
+  }
   sabd_call_args_t *p_args_copy = test_malloc(sizeof(args));
   *p_args_copy = args;
+  p_args_copy->p_ratelimit_set = p_ratelimit_set;
+
+  sgxsd_msg_buf_t msg_copy = {
+    .data = test_malloc(msg.size),
+    .size = msg.size,
+  };
+  if (msg.data != NULL) {
+    memcpy(msg_copy.data, msg.data, msg.size);
+  }
 
   sgxsd_server_state_t *p_new_server_state = p_server_state;
-  assert_int_equal(res, sgxsd_enclave_server_handle_call(p_args_copy, msg, from, &p_new_server_state));
+  assert_int_equal(res, sgxsd_enclave_server_handle_call(p_args_copy, msg_copy, from, &p_new_server_state));
 
+  if (p_ratelimit_set != NULL) {
+    memcpy(args.p_ratelimit_set, p_ratelimit_set, ratelimit_set_size);
+    test_free(p_ratelimit_set);
+  }
+  test_free(msg_copy.data);
   test_free(p_args_copy);
 
   if (expected_reply != NULL) {
     expect_value(sgxsd_enclave_server_reply, reply_buf.size, expected_reply->size);
-    expect_any(sgxsd_enclave_server_reply, reply_buf.data);
-    //expect_memory(sgxsd_enclave_server_reply, reply_buf.data, expected_reply->data, expected_reply->size);
+    expect_memory(sgxsd_enclave_server_reply, reply_buf.data, expected_reply->data, expected_reply->size);
     will_return(sgxsd_enclave_server_reply, (sgx_status_t) { SGX_SUCCESS });
   }
 
@@ -289,7 +320,7 @@ void test_sabd_server_empty_batch(void **state) {
 void test_sabd_server_empty_msg(void **state) {
   test_sabd_server_init(SGX_SUCCESS, *p_empty_start_args);
   test_sabd_server_call(SGX_ERROR_INVALID_PARAMETER, NULL,
-                        (sabd_call_args_t) { .ab_phone_count = 0 },
+                        (sabd_call_args_t) { .ab_phone_count = 0, .ratelimit_set_slot_count = 0, .p_ratelimit_set = NULL },
                         (sgxsd_msg_buf_t)  { .data = NULL, .size = 0 },
                         dummy_msg_from);
   test_sabd_server_term(SGX_SUCCESS, *p_empty_stop_args);
@@ -298,7 +329,7 @@ void test_sabd_server_empty_msg(void **state) {
 void test_sabd_server_invalid_msg_size(void **state) {
   test_sabd_server_init(SGX_SUCCESS, *p_empty_start_args);
   test_sabd_server_call(SGX_ERROR_INVALID_PARAMETER, NULL,
-                        (sabd_call_args_t) { .ab_phone_count = 1 },
+                        (sabd_call_args_t) { .ab_phone_count = 1, .ratelimit_set_slot_count = 0, .p_ratelimit_set = NULL },
                         (sgxsd_msg_buf_t)  { .data = valid_msg_buf.data, .size = valid_msg_buf.size - 1 },
                         dummy_msg_from);
   test_sabd_server_term(SGX_SUCCESS, *p_empty_stop_args);
@@ -307,7 +338,7 @@ void test_sabd_server_invalid_msg_size(void **state) {
 void test_sabd_server_msg_size_mismatch(void **state) {
   test_sabd_server_init(SGX_SUCCESS, *p_empty_start_args);
   test_sabd_server_call(SGX_ERROR_INVALID_PARAMETER, NULL,
-                        (sabd_call_args_t) { .ab_phone_count = 2 },
+                        (sabd_call_args_t) { .ab_phone_count = 2, .ratelimit_set_slot_count = 0, .p_ratelimit_set = NULL },
                         valid_msg_buf,
                         dummy_msg_from);
   test_sabd_server_term(SGX_SUCCESS, *p_empty_stop_args);
@@ -325,7 +356,7 @@ void test_sabd_server_batch_overflow_0(void **state) {
   test_sabd_server_init(SGX_SUCCESS, (sabd_start_args_t) { .max_ab_phones = 0 });
   test_sabd_server_call(SGX_ERROR_INVALID_PARAMETER, NULL,
                         *p_valid_call_args, valid_msg_buf, dummy_msg_from);
-  test_sabd_server_term(SGX_SUCCESS, *p_empty_stop_args);
+  test_sabd_server_term(SGX_SUCCESS, *p_valid_stop_args);
 }
 
 void test_sabd_server_batch_overflow_1(void **state) {
@@ -335,7 +366,7 @@ void test_sabd_server_batch_overflow_1(void **state) {
   test_sabd_server_call(SGX_ERROR_INVALID_PARAMETER, NULL,
                         *p_valid_call_args, valid_msg_buf, dummy_msg_from);
   expect_any(sabd_lookup_hash, hash_table_tries);
-  test_sabd_server_term(SGX_SUCCESS, *p_empty_stop_args);
+  test_sabd_server_term(SGX_SUCCESS, *p_valid_stop_args);
 }
 
 void test_sabd_server_reply_fail(void **state) {
@@ -350,7 +381,84 @@ void test_sabd_server_reply_fail(void **state) {
   test_sabd_server_call(SGX_SUCCESS, &valid_reply,
                         *p_valid_call_args, valid_msg_buf, dummy_msg_from);
   expect_any(sabd_lookup_hash, hash_table_tries);
-  test_sabd_server_term(SGX_ERROR_UNEXPECTED, *p_empty_stop_args);
+  test_sabd_server_term(SGX_ERROR_UNEXPECTED, *p_valid_stop_args);
+}
+
+void test_sabd_server_ratelimit(sabd_ratelimit_set_element_t *p_slots, uint32_t slot_count, uint32_t space_remaining, bool ratelimited) {
+  size_t slots_size = slot_count * sizeof(((sabd_ratelimit_set_t *) 0)->slots[0]);
+  sabd_call_args_t call_args = {
+    .ab_phone_count = p_valid_call_args->ab_phone_count,
+    .ratelimit_set_slot_count = slot_count,
+    .p_ratelimit_set = test_malloc(sizeof(sabd_ratelimit_set_t) + slots_size),
+  };
+  call_args.p_ratelimit_set->space_remaining = space_remaining;
+  if (p_slots != NULL) {
+    memcpy(&call_args.p_ratelimit_set->slots[0], p_slots, slots_size);
+  } else {
+    memset(&call_args.p_ratelimit_set->slots[0], 0, slots_size);
+  }
+
+  sgxsd_msg_buf_t expected_reply = {
+    .data = test_malloc(valid_reply.size),
+    .size = valid_reply.size,
+  };
+  if (ratelimited) {
+    expected_reply.data[0] = 1;
+    memset(&expected_reply.data[1], UINT8_MAX, expected_reply.size - 1);
+  } else {
+    memcpy(expected_reply.data, valid_reply.data, expected_reply.size);
+  }
+
+  test_sabd_server_init(SGX_SUCCESS, (sabd_start_args_t) { .max_ab_phones = 2 });
+  test_sabd_server_call(SGX_SUCCESS, &expected_reply,
+                        call_args, valid_msg_buf, dummy_msg_from);
+  test_sabd_server_call(SGX_SUCCESS, &expected_reply,
+                        call_args, valid_msg_buf, dummy_msg_from);
+
+  test_free(expected_reply.data);
+  test_free(call_args.p_ratelimit_set);
+
+  expect_any(sabd_lookup_hash, hash_table_tries);
+  test_sabd_server_term(SGX_SUCCESS, *p_valid_stop_args);
+}
+
+void test_sabd_server_ratelimit_set_full_size_zero(void **state) {
+  test_sabd_server_ratelimit(NULL, 0, 0, true);
+}
+
+void test_sabd_server_ratelimit_set_full_size_one(void **state) {
+  test_sabd_server_ratelimit(NULL, 1, 0, true);
+}
+
+void test_sabd_server_ratelimit_set_undersized_size_zero(void **state) {
+  test_sabd_server_ratelimit(NULL, 0, 1, true);
+}
+
+void test_sabd_server_ratelimit_set_undersized_size_one(void **state) {
+  test_sabd_server_ratelimit((sabd_ratelimit_set_element_t []) { { .hash = { 1 } } }, 1, 1, true);
+}
+
+void test_sabd_server_ratelimit_set_nonfull_size_one(void **state) {
+  test_sabd_server_ratelimit(NULL, 1, 1, false);
+}
+
+void test_sabd_server_ratelimit_set_nonfull(uint8_t slot_count, uint8_t empty_slot_idx) {
+  sabd_ratelimit_set_element_t ratelimit_set[slot_count];
+  for (uint8_t ratelimit_set_idx = 0; ratelimit_set_idx < slot_count; ratelimit_set_idx++) {
+    memset(&ratelimit_set[(empty_slot_idx + ratelimit_set_idx) % slot_count].hash[0], ratelimit_set_idx, sizeof(ratelimit_set[0].hash));
+  }
+  test_sabd_server_ratelimit(&ratelimit_set[0], slot_count, 1, false);
+}
+
+void test_sabd_server_ratelimit_set_nonfull_size_two(void **state) {
+  test_sabd_server_ratelimit_set_nonfull(2, 0);
+  test_sabd_server_ratelimit_set_nonfull(2, 1);
+}
+
+void test_sabd_server_ratelimit_set_nonfull_size_100(void **state) {
+  test_sabd_server_ratelimit_set_nonfull(100, 0);
+  test_sabd_server_ratelimit_set_nonfull(100, 50);
+  test_sabd_server_ratelimit_set_nonfull(100, 99);
 }
 
 sgx_status_t sabd_lookup_hash(const phone_t *in_phones, uuid_t *in_uuids, size_t in_phone_count,
@@ -533,6 +641,13 @@ int main(int argc, char *argv[]) {
     unit_test_sabd_server(test_sabd_server_batch_overflow_0),
     unit_test_sabd_server(test_sabd_server_batch_overflow_1),
     unit_test_sabd_server(test_sabd_server_reply_fail),
+    unit_test_sabd_server(test_sabd_server_ratelimit_set_full_size_zero),
+    unit_test_sabd_server(test_sabd_server_ratelimit_set_full_size_one),
+    unit_test_sabd_server(test_sabd_server_ratelimit_set_nonfull_size_one),
+    unit_test_sabd_server(test_sabd_server_ratelimit_set_nonfull_size_two),
+    unit_test_sabd_server(test_sabd_server_ratelimit_set_nonfull_size_100),
+    unit_test_sabd_server(test_sabd_server_ratelimit_set_undersized_size_zero),
+    unit_test_sabd_server(test_sabd_server_ratelimit_set_undersized_size_one),
     unit_test(test_sabd_lookup_batch_too_large),
     unit_test(test_sabd_lookup_many_duplicates),
     unit_test(test_sabd_lookup_small_no_in_phones),

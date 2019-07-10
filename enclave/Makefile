@@ -46,14 +46,16 @@ TEST_SGXSD_TARGET	:= $(builddir)/sgxsd-enclave-test
 BEARSSL_SOURCES := \
 	   $(srcdir)/bearssl/gcm.c $(srcdir)/bearssl/ghash_pclmul.c \
 	   $(srcdir)/bearssl/sha2small.c $(srcdir)/bearssl/dec32be.c $(srcdir)/bearssl/enc32be.c \
+	   $(srcdir)/bearssl/sha2big.c   $(srcdir)/bearssl/dec64be.c $(srcdir)/bearssl/enc64be.c \
 	   $(srcdir)/bearssl/aes_x86ni_ctr.c $(srcdir)/bearssl/aes_x86ni.c
 BEARSSL_OBJECTS := $(BEARSSL_SOURCES:.c=.o)
 
-SOURCES := $(srcdir)/sabd-enclave.c.s $(srcdir)/sgxsd-enclave.c $(srcdir)/curve25519-donna-c64.c $(BEARSSL_SOURCES) \
+SOURCES := $(srcdir)/sabd-enclave.c $(srcdir)/sabd-enclave-hash.c.s $(srcdir)/sabd-enclave-ratelimit.c $(srcdir)/sgxsd-enclave.c $(srcdir)/curve25519-donna-c64.c $(BEARSSL_SOURCES) \
 	   $(srcdir)/sgx-tcrypto-stub.c
 OBJECTS := $(addprefix $(builddir)/,$(patsubst %.s,%.o,$(SOURCES:.c=.o)))
 
-TEST_SABD_SOURCES := $(srcdir)/sabd-enclave.c $(srcdir)/sabd-enclave-test.c $(srcdir)/cmockery.c
+TEST_SABD_SOURCES := $(srcdir)/sabd-enclave.c $(srcdir)/sabd-enclave-hash.c $(srcdir)/sabd-enclave-ratelimit.c $(srcdir)/sabd-enclave-test.c $(srcdir)/cmockery.c \
+		     $(srcdir)/bearssl/sha2big.c $(srcdir)/bearssl/dec64be.c $(srcdir)/bearssl/enc64be.c
 TEST_SABD_OBJECTS := $(addprefix $(builddir)/test/,$(TEST_SABD_SOURCES:.c=.o))
 
 TEST_SGXSD_SOURCES := $(srcdir)/sgxsd-enclave.c $(srcdir)/curve25519-donna-c64.c $(srcdir)/sgxsd-enclave-test.c $(srcdir)/cmockery.c
@@ -70,7 +72,7 @@ default: docker-install
 
 docker-install: docker install
 
-all: $(srcdir)/sabd-enclave.c.s $(UNSTRIPPED_TARGET) $(TARGET) $(DEBUG_SIGNED_TARGET) $(SIGNDATA) $(MRENCLAVE) jni
+all: $(srcdir)/sabd-enclave-hash.c.s $(UNSTRIPPED_TARGET) $(TARGET) $(DEBUG_SIGNED_TARGET) $(SIGNDATA) $(MRENCLAVE) jni
 
 test: $(TEST_SABD_TARGET) $(TEST_SGXSD_TARGET)
 	./$(TEST_SABD_TARGET)

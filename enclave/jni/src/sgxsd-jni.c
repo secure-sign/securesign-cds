@@ -538,6 +538,8 @@ JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerCall)
 
     sabd_call_args_t sabd_call_args = {
         .ab_phone_count = j_ab_phone_count,
+        .ratelimit_set_slot_count = 0,
+        .p_ratelimit_set = NULL,
     };
 
     sgxsd_aes_gcm_iv_t msg_iv;

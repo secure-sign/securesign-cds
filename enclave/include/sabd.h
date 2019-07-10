@@ -24,10 +24,28 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "sgx_error.h"
+
 typedef uint64_t phone_t;
 typedef struct uuid {
     uint64_t data64[2];
 } uuid_t;
+
+typedef struct sabd_ratelimit_nonce {
+    uint8_t data[32];
+} sabd_ratelimit_nonce_t;
+_Static_assert(sizeof(sabd_ratelimit_nonce_t) == 32, "Enclave ABI compatibility");
+
+typedef struct sabd_ratelimit_set_element {
+    uint8_t hash[24];
+} sabd_ratelimit_set_element_t;
+_Static_assert(sizeof(sabd_ratelimit_set_element_t) == 24, "Enclave ABI compatibility");
+
+typedef struct sabd_ratelimit_set {
+    uint32_t space_remaining;
+    sabd_ratelimit_set_element_t slots[];
+} sabd_ratelimit_set_t;
+_Static_assert(sizeof(sabd_ratelimit_set_t) == sizeof(uint32_t), "Enclave ABI compatibility");
 
 typedef struct sgxsd_server_init_args {
     uint32_t max_ab_phones;
@@ -36,8 +54,10 @@ _Static_assert(sizeof(sabd_start_args_t) == sizeof(uint32_t), "Enclave ABI compa
 
 typedef struct sgxsd_server_handle_call_args {
     uint32_t ab_phone_count;
+    uint32_t ratelimit_set_slot_count;
+    sabd_ratelimit_set_t *p_ratelimit_set;
 } sgxsd_server_handle_call_args_t, sabd_call_args_t;
-_Static_assert(sizeof(sabd_call_args_t) == sizeof(uint32_t), "Enclave ABI compatibility");
+_Static_assert(sizeof(sabd_call_args_t) == sizeof(uint32_t) + sizeof(uint32_t) + sizeof(void *), "Enclave ABI compatibility");
 
 typedef struct sgxsd_server_terminate_args {
     phone_t *in_phones;
@@ -45,5 +65,13 @@ typedef struct sgxsd_server_terminate_args {
     uuid_t  *in_uuids;
 } sgxsd_server_terminate_args_t, sabd_stop_args_t;
 _Static_assert(sizeof(sabd_stop_args_t) == sizeof(uint64_t) + sizeof(uint64_t) + sizeof(uint64_t), "Enclave ABI compatibility");
+
+//
+// error codes
+//
+
+typedef enum sabd_status_code {
+    SABD_ERROR_RATE_LIMIT_EXCEEDED = SGX_MK_ERROR(0x20001),
+} sabd_status_code_t;
 
 #endif
