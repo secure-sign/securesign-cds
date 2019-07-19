@@ -34,9 +34,9 @@ eval {
 };
 if ($@) {
     if ($@ =~ m/Can\'t locate LWP/) {
-	die "Unable to run: the libwww-perl package is not installed";
+        die "Unable to run: the libwww-perl package is not installed";
     } else {
-	die "Unable to run: Couldn't load LWP::Simple: $@";
+        die "Unable to run: Couldn't load LWP::Simple: $@";
     }
 }
 
@@ -55,14 +55,14 @@ if (not $cdata->load($buildinfo)) {
 }
 
 my @architectures = split /\s+/, $cdata->{"Architecture"};
-my $build_source = (scalar (grep /^source$/, @architectures)) == 1;
-my $build_archall = (scalar (grep /^all$/, @architectures)) == 1;
-@architectures = grep {!/^source$/ && !/^all$/} @architectures;
+my $build_source  = (scalar(grep /^source$/, @architectures)) == 1;
+my $build_archall = (scalar(grep /^all$/,    @architectures)) == 1;
+@architectures = grep { !/^source$/ && !/^all$/ } @architectures;
 if (scalar @architectures > 1) {
     die "more than one architecture in Architecture field";
 }
 my $build_archany = (scalar @architectures) == 1;
-my $host_arch = undef;
+my $host_arch     = undef;
 if ($build_archany) {
     $host_arch = $architectures[0];
 }
@@ -77,16 +77,17 @@ if (not defined($inst_build_deps)) {
 }
 
 my $srcpkg = Dpkg::Source::Package->new();
-$srcpkg->{fields}{'Source'} = $cdata->{"Source"};
+$srcpkg->{fields}{'Source'}  = $cdata->{"Source"};
 $srcpkg->{fields}{'Version'} = $cdata->{"Version"};
-my $dsc_fname = (dirname($buildinfo)) .'/'. $srcpkg->get_basename(1) . ".dsc";
+my $dsc_fname
+  = (dirname($buildinfo)) . '/' . $srcpkg->get_basename(1) . ".dsc";
 
 my $environment = $cdata->{"Environment"};
 if (not defined($environment)) {
     die "need Environment field";
 }
-$environment =~ s/\n/ /g; # remove newlines
-$environment =~ s/^ //; # remove leading whitespace
+$environment =~ s/\n/ /g;    # remove newlines
+$environment =~ s/^ //;      # remove leading whitespace
 
 my $checksums = Dpkg::Checksums->new();
 $checksums->add_from_control($cdata);
@@ -97,44 +98,46 @@ my @files = $checksums->get_files();
 my $base_files_version;
 my $dpkg_version;
 my @inst_build_deps = ();
-$inst_build_deps = deps_parse($inst_build_deps, reduce_arch => 0, build_dep => 0);
-if (! defined $inst_build_deps) {
+$inst_build_deps
+  = deps_parse($inst_build_deps, reduce_arch => 0, build_dep => 0);
+if (!defined $inst_build_deps) {
     die "deps_parse failed\n";
 }
 
 foreach my $pkg ($inst_build_deps->get_deps()) {
-    if (! $pkg->isa('Dpkg::Deps::Simple')) {
-	die "dependency disjunctions are not allowed\n";
+    if (!$pkg->isa('Dpkg::Deps::Simple')) {
+        die "dependency disjunctions are not allowed\n";
     }
     if (not defined($pkg->{package})) {
-	die "name undefined";
+        die "name undefined";
     }
     if (defined($pkg->{relation})) {
-	if ($pkg->{relation} ne "=") {
-	    die "wrong relation";
-	}
-	if (not defined($pkg->{version})) {
-	    die "version undefined"
-	}
+        if ($pkg->{relation} ne "=") {
+            die "wrong relation";
+        }
+        if (not defined($pkg->{version})) {
+            die "version undefined";
+        }
     } else {
-	die "no version";
+        die "no version";
     }
     if ($pkg->{package} eq "dpkg") {
-	if (defined($dpkg_version)) {
-	    die "more than one dpkg\n";
-	}
-	$dpkg_version = $pkg->{version};
+        if (defined($dpkg_version)) {
+            die "more than one dpkg\n";
+        }
+        $dpkg_version = $pkg->{version};
     }
     if ($pkg->{package} eq "base-files") {
-	if (defined($base_files_version)) {
-	    die "more than one base-files\n";
-	}
-	$base_files_version = $pkg->{version};
+        if (defined($base_files_version)) {
+            die "more than one base-files\n";
+        }
+        $base_files_version = $pkg->{version};
     }
-    push @inst_build_deps, { name => $pkg->{package},
-	architecture => $pkg->{archqual},
-	version => $pkg->{version}
-    };
+    push @inst_build_deps,
+      {
+        name         => $pkg->{package},
+        architecture => $pkg->{archqual},
+        version      => $pkg->{version} };
 }
 
 open(my $build_deps_fd, '>', "$outdir/build-deps") or die;
@@ -143,9 +146,9 @@ foreach my $pkg (@inst_build_deps) {
     my $pkg_ver = $pkg->{version};
     my $pkg_arch = $pkg->{architecture};
     if (($pkg_arch // "") eq "" || $pkg_arch eq "all" || $pkg_arch eq $build_arch) {
-	print $build_deps_fd "$pkg_name=$pkg_ver\n";
+        print $build_deps_fd "$pkg_name=$pkg_ver\n";
     } else {
-	print $build_deps_fd "$pkg_name:$pkg_arch=$pkg_ver\n";
+        print $build_deps_fd "$pkg_name:$pkg_arch=$pkg_ver\n";
     }
 }
 
@@ -160,10 +163,10 @@ if (!defined($dpkg_version)) {
 my $base_dist;
 
 my %base_files_map = (
-    "6" => "squeeze",
-    "7" => "wheezy",
-    "8" => "jessie",
-    "9" => "stretch",
+    "6"  => "squeeze",
+    "7"  => "wheezy",
+    "8"  => "jessie",
+    "9"  => "stretch",
     "10" => "buster",
     "11" => "bullseye",
 );
@@ -181,8 +184,8 @@ $dpkg_version =~ s/1\.(\d+)\..*/$1/;
 
 $base_dist = $base_files_map{$base_files_version};
 
-if (! defined $base_dist) {
-    die "base-files version didn't map to any Debian release"
+if (!defined $base_dist) {
+    die "base-files version didn't map to any Debian release";
 }
 
 if ($base_dist ne $dpkg_map{$dpkg_version}) {
@@ -194,29 +197,52 @@ if ($base_dist ne $dpkg_map{$dpkg_version}) {
 foreach my $fname ($checksums->get_files()) {
     # Re-adding existing files to the checksum object is the current way to
     # ask Dpkg to check the checksums for us
-    $checksums->add_from_file((dirname($buildinfo)) .'/'. $fname);
+    $checksums->add_from_file((dirname($buildinfo)) . '/' . $fname);
 }
 
 # setup a temporary apt directory
 
 my $tempdir = tempdir(CLEANUP => 1);
 
-foreach my $d (('/etc/apt', '/etc/apt/apt.conf.d', '/etc/apt/preferences.d',
-	'/etc/apt/trusted.gpg.d', '/etc/apt/sources.list.d',
-	'/var/lib/apt/lists/partial',
-	'/var/cache/apt/archives/partial', '/var/lib/dpkg')) {
+foreach my $d ((
+        '/etc/apt',                        '/etc/apt/apt.conf.d',
+        '/etc/apt/preferences.d',          '/etc/apt/trusted.gpg.d',
+        '/etc/apt/sources.list.d',         '/var/lib/apt/lists/partial',
+        '/var/cache/apt/archives/partial', '/var/lib/dpkg',
+    )
+) {
     make_path("$tempdir/$d");
 }
 
+my $armored_key   = "$tempdir/etc/apt/trusted.gpg.d/reproducible.asc";
+my $dearmored_key = "$tempdir/etc/apt/trusted.gpg.d/reproducible.gpg";
+my $http_code     = LWP::Simple::mirror(
+    "https://tests.reproducible-builds.org/debian/repository/reproducible.asc",
+    $armored_key
+);
+if ($http_code != 200) {
+    die "got http $http_code when trying to retrieve reproducible.asc\n";
+}
+my $expected_gpg = <<'END';
+pub:-:4096:1:5DB7CA67EA59A31F:1412221944:1642763403::-:
+fpr:::::::::49B6574736D0B637CC3701EA5DB7CA67EA59A31F:
+uid:::::::::Debian Reproducible Builds Archive Signing Key:
+END
+if (qx(gpg --with-colons --with-fingerprint $armored_key) ne $expected_gpg) {
+    die "wrong reproducible.asc key\n";
+}
+system 'gpg', '--yes', '--batch', '--output', $dearmored_key, '--dearmor',
+  $armored_key;
+
 open(FH, '>', "$tempdir/etc/apt/sources.list");
 print FH <<EOF;
+deb http://tests.reproducible-builds.org/debian/repository/debian/ ./
 deb http://httpredir.debian.org/debian/ $base_dist main
-deb http://security.debian.org/ $base_dist/updates main
 EOF
 close FH;
 # Create dpkg status
 open(FH, '>', "$tempdir/var/lib/dpkg/status");
-close FH; #empty file
+close FH;    #empty file
 # Create apt.conf
 my $aptconf = "$tempdir/etc/apt/apt.conf";
 open(FH, ">$aptconf");
@@ -270,7 +296,7 @@ close FH;
 # add the removed keys because they are not returned by Dpkg::Vendor
 # we don't need the Ubuntu vendor now but we already put the comments to
 # possibly extend this script to other Debian derivatives
-my @keyrings = ();
+my @keyrings     = ();
 my $debianvendor = Dpkg::Vendor::Debian->new();
 push @keyrings, $debianvendor->run_hook('archive-keyrings');
 push @keyrings, $debianvendor->run_hook('archive-keyrings-historic');
@@ -282,8 +308,8 @@ foreach my $keyring (@keyrings) {
     my $base = basename $keyring;
     print "$keyring\n";
     if (-f $keyring) {
-	print "linking $tempdir/etc/apt/trusted.gpg.d/$base to $keyring\n";
-	symlink $keyring, "$tempdir/etc/apt/trusted.gpg.d/$base";
+        print "linking $tempdir/etc/apt/trusted.gpg.d/$base to $keyring\n";
+        symlink $keyring, "$tempdir/etc/apt/trusted.gpg.d/$base";
     }
 }
 
@@ -292,11 +318,15 @@ $ENV{'APT_CONFIG'} = $aptconf;
 0 == system 'apt-get', 'update' or die "apt-get update failed\n";
 
 my $key_func = sub {
-    return $_[0]->{Package} . ' ' . $_[0]->{Version} . ' ' . $_[0]->{Architecture};
+    return
+        $_[0]->{Package} . ' '
+      . $_[0]->{Version} . ' '
+      . $_[0]->{Architecture};
 };
-my $index = Dpkg::Index->new(get_key_func=>$key_func);
+my $index = Dpkg::Index->new(get_key_func => $key_func);
 
-open(my $fd, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages');
+open(my $fd, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)',
+    'Created-By: Packages');
 while (my $fname = <$fd>) {
     chomp $fname;
     print "parsing $fname...\n";
@@ -312,31 +342,32 @@ my %notfound_timestamps;
 
 foreach my $pkg (@inst_build_deps) {
     my $pkg_name = $pkg->{name};
-    my $pkg_ver = $pkg->{version};
+    my $pkg_ver  = $pkg->{version};
     my $pkg_arch = $pkg->{architecture};
 
     # check if we really need to acquire this package from snapshot.d.o or if
     # it already exists in the cache
     if (defined $pkg->{architecture}) {
-	if ($index->get_by_key("$pkg_name $pkg_ver $pkg_arch")) {
-	    print "skipping $pkg_name $pkg_ver\n";
-	    next;
-	}
+        if ($index->get_by_key("$pkg_name $pkg_ver $pkg_arch")) {
+            print "skipping $pkg_name $pkg_ver\n";
+            next;
+        }
     } else {
-	if ($index->get_by_key("$pkg_name $pkg_ver $build_arch")) {
-	    $pkg->{architecture} = $build_arch;
-	    print "skipping $pkg_name $pkg_ver\n";
-	    next;
-	}
-	if ($index->get_by_key("$pkg_name $pkg_ver all")) {
-	    $pkg->{architecture} = "all";
-	    print "skipping $pkg_name $pkg_ver\n";
-	    next;
-	}
+        if ($index->get_by_key("$pkg_name $pkg_ver $build_arch")) {
+            $pkg->{architecture} = $build_arch;
+            print "skipping $pkg_name $pkg_ver\n";
+            next;
+        }
+        if ($index->get_by_key("$pkg_name $pkg_ver all")) {
+            $pkg->{architecture} = "all";
+            print "skipping $pkg_name $pkg_ver\n";
+            next;
+        }
     }
 
     print "retrieving snapshot.d.o data for $pkg_name $pkg_ver\n";
-    my $json_url = "http://snapshot.debian.org/mr/binary/$pkg_name/$pkg_ver/binfiles?fileinfo=1";
+    my $json_url
+      = "http://snapshot.debian.org/mr/binary/$pkg_name/$pkg_ver/binfiles?fileinfo=1";
     my $content = LWP::Simple::get($json_url);
     die "cannot retrieve $json_url" unless defined $content;
     my $json = JSON::PP->new();
@@ -344,45 +375,50 @@ foreach my $pkg (@inst_build_deps) {
     my $json_text = $json->allow_nonref->utf8->relaxed->decode($content);
     die "cannot decode json" unless defined $json_text;
     my $pkg_hash;
-    if (scalar @{$json_text->{result}} == 1) {
-	# if there is only a single result, then the package must either be
-	# Architecture:all, be the build architecture or match the requested
-	# architecture
-	$pkg_hash = ${$json_text->{result}}[0]->{hash};
-	$pkg->{architecture} = ${$json_text->{result}}[0]->{architecture};
-	# if a specific architecture was requested, it should match
-	if (defined $pkg_arch && $pkg_arch ne $pkg->{architecture}) {
-	    die "package $pkg_name was explicitly requested for $pkg_arch but only $pkg->{architecture} was found\n";
-	}
-	# if no specific architecture was requested, it should be the build
-	# architecture
-	if (! defined $pkg_arch && $build_arch ne $pkg->{architecture} && "all" ne $pkg->{architecture}) {
-	    die "package $pkg_name was implicitly requested for $pkg_arch but only $pkg->{architecture} was found\n";
-	}
+    if (scalar @{ $json_text->{result} } == 1) {
+        # if there is only a single result, then the package must either be
+        # Architecture:all, be the build architecture or match the requested
+        # architecture
+        $pkg_hash = ${ $json_text->{result} }[0]->{hash};
+        $pkg->{architecture} = ${ $json_text->{result} }[0]->{architecture};
+        # if a specific architecture was requested, it should match
+        if (defined $pkg_arch && $pkg_arch ne $pkg->{architecture}) {
+            die
+"package $pkg_name was explicitly requested for $pkg_arch but only $pkg->{architecture} was found\n";
+        }
+        # if no specific architecture was requested, it should be the build
+        # architecture
+        if (   !defined $pkg_arch
+            && $build_arch ne $pkg->{architecture}
+            && "all" ne $pkg->{architecture}) {
+            die
+"package $pkg_name was implicitly requested for $pkg_arch but only $pkg->{architecture} was found\n";
+        }
     } else {
-	# Since the package occurs more than once, we expect it to be of
-	# Architecture:any
-	#
-	# If no specific architecture was requested, look for the build
-	# architecture
-	if (! defined $pkg_arch) {
-	    $pkg_arch = $build_arch;
-	}
-	foreach my $result (@{$json_text->{result}}) {
-	    if ($result->{architecture} eq $pkg_arch) {
-		$pkg_hash = $result->{hash};
-		last;
-	    }
-	}
-	if (! defined($pkg_hash)) {
-	    die "cannot find package in architecture $pkg_arch\n";
-	}
-	# we now know that this package is not architecture:all but has a
-	# concrete architecture
-	$pkg->{architecture} = $pkg_arch;
+        # Since the package occurs more than once, we expect it to be of
+        # Architecture:any
+        #
+        # If no specific architecture was requested, look for the build
+        # architecture
+        if (!defined $pkg_arch) {
+            $pkg_arch = $build_arch;
+        }
+        foreach my $result (@{ $json_text->{result} }) {
+            if ($result->{architecture} eq $pkg_arch) {
+                $pkg_hash = $result->{hash};
+                last;
+            }
+        }
+        if (!defined($pkg_hash)) {
+            die "cannot find package in architecture $pkg_arch\n";
+        }
+        # we now know that this package is not architecture:all but has a
+        # concrete architecture
+        $pkg->{architecture} = $pkg_arch;
     }
     # assumption: package is from Debian official (and not ports)
-    my @package_from_main = grep { $_->{archive_name} eq "debian" } @{$json_text->{fileinfo}->{$pkg_hash}};
+    my @package_from_main = grep { $_->{archive_name} eq "debian" }
+      @{ $json_text->{fileinfo}->{$pkg_hash} };
     if (scalar @package_from_main > 1) {
         die "more than one package with the same hash in Debian official\n";
     }
@@ -402,7 +438,8 @@ foreach my $pkg (@inst_build_deps) {
 
 while (0 < scalar keys %notfound_timestamps) {
     print "left to check: " . (scalar keys %notfound_timestamps) . "\n";
-    my @timestamps = map { Time::Piece->strptime($_, '%Y%m%dT%H%M%SZ') } (sort keys %notfound_timestamps);
+    my @timestamps = map { Time::Piece->strptime($_, '%Y%m%dT%H%M%SZ') }
+      (sort keys %notfound_timestamps);
     my $newest = $timestamps[$#timestamps];
     $newest = $newest->strftime("%Y%m%dT%H%M%SZ");
     delete $notfound_timestamps{$newest};
@@ -410,33 +447,34 @@ while (0 < scalar keys %notfound_timestamps) {
     my $snapshot_url = "http://snapshot.debian.org/archive/debian/$newest/";
 
     open(FH, '>>', "$tempdir/etc/apt/sources.list");
-    print FH "deb $snapshot_url unstable main\n";
+    print FH "deb $snapshot_url buster main\n";
     close FH;
 
     0 == system 'apt-get', 'update' or die "apt-get update failed";
 
-    my $index = Dpkg::Index->new(get_key_func=>$key_func);
-    open(my $fd, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)', 'Created-By: Packages');
+    my $index = Dpkg::Index->new(get_key_func => $key_func);
+    open(my $fd, '-|', 'apt-get', 'indextargets', '--format', '$(FILENAME)',
+        'Created-By: Packages');
     while (my $fname = <$fd>) {
-	chomp $fname;
-	print "parsing $fname...\n";
-	open(my $fd2, '-|', '/usr/lib/apt/apt-helper', 'cat-file', $fname);
-	$index->parse($fd2, "pipe") or die "cannot parse Packages file\n";
-	close($fd2);
+        chomp $fname;
+        print "parsing $fname...\n";
+        open(my $fd2, '-|', '/usr/lib/apt/apt-helper', 'cat-file', $fname);
+        $index->parse($fd2, "pipe") or die "cannot parse Packages file\n";
+        close($fd2);
     }
     close($fd);
     foreach my $pkg (@inst_build_deps) {
-	my $pkg_name = $pkg->{name};
-	my $pkg_ver = $pkg->{version};
-	my $pkg_arch = $pkg->{architecture};
-	my $first_seen = $pkg->{first_seen};
-	my $cdata = $index->get_by_key("$pkg_name $pkg_ver $pkg_arch");
-	if (not defined($cdata->{"Package"})) {
-	    die "cannot find $pkg_name/$pkg_ver/$pkg_arch in dumpavail\n";
-	}
-	if (defined $first_seen) {
-	    delete $notfound_timestamps{$first_seen};
-	}
+        my $pkg_name   = $pkg->{name};
+        my $pkg_ver    = $pkg->{version};
+        my $pkg_arch   = $pkg->{architecture};
+        my $first_seen = $pkg->{first_seen};
+        my $cdata      = $index->get_by_key("$pkg_name $pkg_ver $pkg_arch");
+        if (not defined($cdata->{"Package"})) {
+            die "cannot find $pkg_name/$pkg_ver/$pkg_arch in dumpavail\n";
+        }
+        if (defined $first_seen) {
+            delete $notfound_timestamps{$first_seen};
+        }
     }
 }
 

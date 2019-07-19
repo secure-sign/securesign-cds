@@ -255,8 +255,9 @@ static void test_sgxsd_negotiate_request_generate_keypair_rand_error(void **stat
 
 static void test_sgxsd_negotiate_request(uint8_t *expected_pending_request_id, sgxsd_pending_request_id_t *p_pending_request_id) {
   expect_sgx_read_rand(SGX_SUCCESS, NULL, sizeof((sgxsd_curve25519_private_key_t*){0}->x));
-  sgxsd_aes_gcm_iv_t *expected_p_iv;
-  expect_sgx_read_rand(SGX_SUCCESS, &expected_p_iv, sizeof(sgxsd_aes_gcm_iv_t));
+  uint8_t *expected_p_iv_data;
+  expect_sgx_read_rand(SGX_SUCCESS, &expected_p_iv_data, sizeof(sgxsd_aes_gcm_iv_t));
+  sgxsd_aes_gcm_iv_t *expected_p_iv = (sgxsd_aes_gcm_iv_t *) expected_p_iv_data;
 
   expect_sgxsd_aes_gcm_encrypt(SGX_SUCCESS, NULL,
                                expected_pending_request_id, sizeof(p_pending_request_id->data), true, NULL,
@@ -329,9 +330,9 @@ static void test_sgxsd_server_call_not_started(void **state) {
 static void test_sgxsd_server_call(sgx_status_t res, sgx_status_t decrypt_msg_res,
                                    sgx_status_t handle_call_res, sgxsd_msg_buf_t msg) {
   uint8_t expected_pending_request_id[sizeof(test_msg_header.pending_request_id.data)];
-  test_sgxsd_negotiate_request(&expected_pending_request_id, &test_msg_header.pending_request_id);
+  test_sgxsd_negotiate_request(&expected_pending_request_id[0], &test_msg_header.pending_request_id);
 
-  uint8_t *p_expected_pending_request_id_data;
+  void *p_expected_pending_request_id_data;
   expect_sgxsd_aes_gcm_decrypt(SGX_SUCCESS, NULL,
                                &test_msg_header.pending_request_id.data, sizeof(test_msg_header.pending_request_id.data),
                                &p_expected_pending_request_id_data,
@@ -340,13 +341,14 @@ static void test_sgxsd_server_call(sgx_status_t res, sgx_status_t decrypt_msg_re
                                &test_msg_header.pending_request_id.mac);
   memcpy(p_expected_pending_request_id_data, &expected_pending_request_id, sizeof(expected_pending_request_id));
 
-  sgxsd_msg_buf_t expected_decrypted_msg_buf = { .size = msg.size };
+  void *p_expected_decrypted_msg_buf_data;
   expect_sgxsd_aes_gcm_decrypt(decrypt_msg_res, NULL,
                                msg.data, msg.size,
-                               &expected_decrypted_msg_buf.data,
+                               &p_expected_decrypted_msg_buf_data,
                                &test_msg_header.iv,
                                &test_msg_header.pending_request_id, sizeof(test_msg_header.pending_request_id),
                                &test_msg_header.mac);
+  sgxsd_msg_buf_t expected_decrypted_msg_buf = { .data = p_expected_decrypted_msg_buf_data, .size = msg.size };
   if (decrypt_msg_res == SGX_SUCCESS) {
     expect_sgxsd_enclave_server_handle_call(handle_call_res, test_args, test_args_size,
                                             expected_decrypted_msg_buf, valid_msg_from);
@@ -417,8 +419,9 @@ static void test_sgxsd_server_stop_valid(void **state) {
 static void test_sgxsd_server_reply(sgx_status_t res,
                                     sgx_status_t encrypt_res, sgx_status_t reply_ocall_res, sgx_status_t reply_res,
                                     sgxsd_msg_buf_t reply_buf) {
-  sgxsd_aes_gcm_iv_t *expected_iv;
-  expect_sgx_read_rand(SGX_SUCCESS, &expected_iv, sizeof(expected_iv->data));
+  uint8_t *expected_iv_data;
+  expect_sgx_read_rand(SGX_SUCCESS, &expected_iv_data, sizeof(((sgxsd_aes_gcm_iv_t *) 0)->data));
+  sgxsd_aes_gcm_iv_t *expected_iv = (sgxsd_aes_gcm_iv_t *) expected_iv_data;
   expected_iv->data[0] |= 1;
   void *p_expected_dst;
   sgxsd_aes_gcm_mac_t *p_expected_out_mac;
@@ -560,7 +563,7 @@ void expect_sgx_read_rand(sgx_status_t res, unsigned char **p_rand, size_t expec
 sgx_status_t sgx_read_rand(unsigned char *rand, size_t length_in_bytes) {
   check_expected(length_in_bytes);
   assert_int_not_equal(rand, NULL);
-  const void *res_rand = (const void *) mock();
+  void *res_rand = (void *) mock();
   if (res_rand != NULL) {
     memcpy(rand, res_rand, length_in_bytes);
     test_free(res_rand);
@@ -633,7 +636,7 @@ sgx_status_t sgxsd_aes_gcm_encrypt(const sgxsd_aes_gcm_key_t *p_key,
     memcpy(res_p_src, p_src, src_len);
   }
   check_expected(p_src);
-  const void *res_p_dst = (const void *) mock();
+  void *res_p_dst = (void *) mock();
   if (res_p_dst != NULL) {
     assert_int_not_equal(p_dst, NULL);
     assert_int_not_equal(p_src, NULL);
@@ -675,7 +678,7 @@ void expect_sgxsd_aes_gcm_decrypt(sgx_status_t res,
     expect_not_value(sgxsd_aes_gcm_decrypt, p_key, NULL);
   }
   expect_value(sgxsd_aes_gcm_decrypt, src_len, expected_src_len);
-  if (expected_src_len != NULL) {
+  if (expected_src_len != 0) {
     assert_int_not_equal(expected_p_src, NULL);
     expect_memory(sgxsd_aes_gcm_decrypt, p_src, expected_p_src, expected_src_len);
   } else {
@@ -684,7 +687,7 @@ void expect_sgxsd_aes_gcm_decrypt(sgx_status_t res,
   will_return(sgxsd_aes_gcm_decrypt, res_p_dst);
   expect_memory(sgxsd_aes_gcm_decrypt, p_iv, expected_p_iv, sizeof(expected_p_iv->data));
   expect_value(sgxsd_aes_gcm_decrypt, aad_len, expected_aad_len);
-  if (expected_aad_len != NULL) {
+  if (expected_aad_len != 0) {
     assert_int_not_equal(expected_p_aad, NULL);
     expect_memory(sgxsd_aes_gcm_decrypt, p_aad, expected_p_aad, expected_aad_len);
   } else {
@@ -701,7 +704,7 @@ sgx_status_t sgxsd_aes_gcm_decrypt(const sgxsd_aes_gcm_key_t *p_key,
   check_expected(p_key);
   check_expected(src_len);
   check_expected(p_src);
-  const void *res_p_dst = (const void *) mock();
+  void *res_p_dst = (void *) mock();
   if (res_p_dst != NULL) {
     assert_int_not_equal(p_dst, NULL);
     assert_int_not_equal(p_src, NULL);

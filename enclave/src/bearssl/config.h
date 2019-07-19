@@ -99,8 +99,37 @@
  */
 
 /*
+ * When BR_RDRAND is enabled, the SSL engine will use the RDRAND opcode
+ * to automatically obtain quality randomness for seeding its internal
+ * PRNG. Since that opcode is present only in recent x86 CPU, its
+ * support is dynamically tested; if the current CPU does not support
+ * it, then another random source will be used, such as /dev/urandom or
+ * CryptGenRandom().
+ *
+#define BR_RDRAND   1
+ */
+
+/*
+ * When BR_USE_GETENTROPY is enabled, the SSL engine will use the
+ * getentropy() function to obtain quality randomness for seeding its
+ * internal PRNG. On Linux and FreeBSD, getentropy() is implemented by
+ * the standard library with the system call getrandom(); on OpenBSD,
+ * getentropy() is the system call, and there is no getrandom() wrapper,
+ * hence the use of the getentropy() function for maximum portability.
+ *
+ * If the getentropy() call fails, and BR_USE_URANDOM is not explicitly
+ * disabled, then /dev/urandom will be used as a fallback mechanism. On
+ * FreeBSD and OpenBSD, this does not change much, since /dev/urandom
+ * will block if not enough entropy has been obtained since last boot.
+ * On Linux, /dev/urandom might not block, which can be troublesome in
+ * early boot stages, which is why getentropy() is preferred.
+ *
+#define BR_USE_GETENTROPY   1
+ */
+
+/*
  * When BR_USE_URANDOM is enabled, the SSL engine will use /dev/urandom
- * to automatically obtain quality randomness for seedings its internal
+ * to automatically obtain quality randomness for seeding its internal
  * PRNG.
  *
 #define BR_USE_URANDOM   1
@@ -109,7 +138,7 @@
 /*
  * When BR_USE_WIN32_RAND is enabled, the SSL engine will use the Win32
  * (CryptoAPI) functions (CryptAcquireContext(), CryptGenRandom()...) to
- * automatically obtain quality randomness for seedings its internal PRNG.
+ * automatically obtain quality randomness for seeding its internal PRNG.
  *
  * Note: if both BR_USE_URANDOM and BR_USE_WIN32_RAND are defined, the
  * former takes precedence.
@@ -163,6 +192,16 @@
  */
 
 /*
+ * When BR_SSE2 is enabled, SSE2 intrinsics will be used for some
+ * algorithm implementations that use them (e.g. chacha20_sse2). If this
+ * is not enabled explicitly, then support for SSE2 intrinsics will be
+ * automatically detected. If set explicitly to 0, then SSE2 code will
+ * not be compiled at all.
+ *
+#define BR_SSE2   1
+ */
+
+/*
  * When BR_POWER8 is enabled, the AES implementation using the POWER ISA
  * 2.07 opcodes (available on POWER8 processors and later) is compiled.
  * If this is not enabled explicitly, then that implementation will be
@@ -199,7 +238,7 @@
 
 /*
  * When BR_BE_UNALIGNED is enabled, then the current architecture is
- * assumed to use little-endian encoding for integers, and to tolerate
+ * assumed to use big-endian encoding for integers, and to tolerate
  * unaligned accesses with no or minimal time penalty.
  *
 #define BR_BE_UNALIGNED   1

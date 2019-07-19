@@ -19,6 +19,8 @@
   * @author Jeff Griffin
   */
 #include <stdarg.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include "sgx_urts.h"
 #include "sgx_uae_service.h"

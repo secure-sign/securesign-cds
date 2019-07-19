@@ -20,6 +20,8 @@
   */
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <arpa/inet.h>
 #include <jni.h>
