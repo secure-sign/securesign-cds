@@ -150,8 +150,8 @@ public class SgxEnclave implements Runnable {
   private void handleSgxException(SgxException ex) {
     if (ex.getCode() <= Integer.MAX_VALUE) {
       switch ((int) ex.getCode()) {
-        case SgxException.SGX_ERROR_INVALID_PARAMETER: throw new IllegalArgumentException(ex.getName());
-        case SgxException.SGX_ERROR_INVALID_STATE:     throw new IllegalStateException(ex.getName());
+        case SgxException.SGX_ERROR_INVALID_PARAMETER: throw new IllegalArgumentException(ex.getName(), ex);
+        case SgxException.SGX_ERROR_INVALID_STATE:     throw new IllegalStateException(ex.getName(), ex);
         case SgxException.SGX_ERROR_ENCLAVE_LOST:
         case SgxException.SGX_ERROR_ENCLAVE_CRASHED:
         case SgxException.SGX_ERROR_INVALID_ENCLAVE:
@@ -165,9 +165,10 @@ public class SgxEnclave implements Runnable {
     if (ex.getCode() <= Integer.MAX_VALUE) {
       switch ((int) ex.getCode()) {
         case SgxException.SGXSD_ERROR_PENDING_REQUEST_NOT_FOUND: return new NoSuchPendingRequestException();
+        case SgxException.SABD_ERROR_INVALID_REQUEST_SIZE:       return new InvalidRequestSizeException();
         case SgxException.SGX_ERROR_MAC_MISMATCH:                return new AEADBadTagException();
-        case SgxException.SGX_ERROR_INVALID_PARAMETER:           return new IllegalArgumentException(ex.getName());
-        case SgxException.SGX_ERROR_INVALID_STATE:               return new IllegalStateException(ex.getName());
+        case SgxException.SGX_ERROR_INVALID_PARAMETER:           return new IllegalArgumentException(ex.getName(), ex);
+        case SgxException.SGX_ERROR_INVALID_STATE:               return new IllegalStateException(ex.getName(), ex);
       }
     }
     return ex;
@@ -279,7 +280,7 @@ public class SgxEnclave implements Runnable {
     public synchronized void close() throws SgxException {
       if (!processed) {
         batchFuture.completeExceptionally(new SgxException("batch_closed"));
-        process(ByteBuffer.allocateDirect(8), ByteBuffer.allocateDirect(16), 0);
+        process(null, null, 0);
       }
     }
 

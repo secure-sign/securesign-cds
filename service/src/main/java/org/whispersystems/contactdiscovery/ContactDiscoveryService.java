@@ -42,6 +42,7 @@ import org.whispersystems.contactdiscovery.mappers.AEADBadTagExceptionMapper;
 import org.whispersystems.contactdiscovery.mappers.DirectoryUnavailableExceptionMapper;
 import org.whispersystems.contactdiscovery.mappers.IOExceptionMapper;
 import org.whispersystems.contactdiscovery.mappers.InvalidAddressExceptionMapper;
+import org.whispersystems.contactdiscovery.mappers.InvalidRequestSizeExceptionMapper;
 import org.whispersystems.contactdiscovery.mappers.NoSuchEnclaveExceptionMapper;
 import org.whispersystems.contactdiscovery.mappers.NoSuchPendingRequestExceptionMapper;
 import org.whispersystems.contactdiscovery.mappers.RateLimitExceededExceptionMapper;
@@ -158,6 +159,7 @@ public class ContactDiscoveryService extends Application<ContactDiscoveryConfigu
     environment.jersey().register(new SignedQuoteUnavailableExceptionMapper());
     environment.jersey().register(new NoSuchPendingRequestExceptionMapper());
     environment.jersey().register(new AEADBadTagExceptionMapper());
+    environment.jersey().register(new InvalidRequestSizeExceptionMapper());
     environment.jersey().register(new InvalidAddressExceptionMapper());
     environment.jersey().register(new DirectoryUnavailableExceptionMapper());
 

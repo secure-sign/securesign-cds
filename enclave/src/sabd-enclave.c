@@ -105,10 +105,12 @@ sgx_status_t sgxsd_enclave_server_handle_call(const sabd_call_args_t *p_args,
   }
   uint32_t bytes_per_ab_phone = sizeof(phone_t) + sizeof(sabd_ratelimit_nonce_t);
   if (p_args->ab_phone_count == 0 ||
-      p_args->ab_phone_count > p_state->max_ab_phones - p_state->ab_phone_count ||
-      msg.size % bytes_per_ab_phone != 0 ||
-      msg.size / bytes_per_ab_phone != p_args->ab_phone_count) {
+      p_args->ab_phone_count > p_state->max_ab_phones - p_state->ab_phone_count) {
     return SGX_ERROR_INVALID_PARAMETER;
+  }
+  if (msg.size % bytes_per_ab_phone != 0 ||
+      msg.size / bytes_per_ab_phone != p_args->ab_phone_count) {
+    return SABD_ERROR_INVALID_REQUEST_SIZE;
   }
   sgx_lfence();
 

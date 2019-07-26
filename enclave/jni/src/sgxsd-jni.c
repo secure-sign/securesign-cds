@@ -582,51 +582,51 @@ JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerCall)
 
 JNIEXPORT void JNICALL SGXSD_JNI_CLASS_METHOD(nativeServerStop)
     (JNIEnv *env, jclass class, jlong j_enclave_id, jlong j_server_state, jobject j_in_phones, jobject j_in_uuids, jlong j_in_phone_count) {
-    if (j_in_phones == NULL) {
-        sgxsd_jni_throw_exception(env, "java/lang/NullPointerException", "()V");
-        return;
-    }
-
     g_sgxsd_thread_jni_env = env;
 
     sgx_enclave_id_t enclave_id = j_enclave_id;
     sgxsd_server_state_handle_t server_state = (sgxsd_server_state_handle_t) j_server_state;
 
-    void *in_phones = (*env)->GetDirectBufferAddress(env, j_in_phones);
-    void *in_uuids  = (*env)->GetDirectBufferAddress(env, j_in_uuids);
-    if (in_phones != NULL && in_uuids != NULL) {
-        jlong j_in_phones_capacity = (*env)->GetDirectBufferCapacity(env, j_in_phones);
-        jlong j_in_uuids_capacity  = (*env)->GetDirectBufferCapacity(env, j_in_uuids);
-        if (j_in_phone_count <= j_in_phones_capacity / ((jlong) sizeof(*(((sabd_stop_args_t *) 0)->in_phones))) &&
-            j_in_phone_count <= j_in_uuids_capacity  / ((jlong) sizeof(*(((sabd_stop_args_t *) 0)->in_uuids)))) {
-            sabd_stop_args_t sabd_stop_args = {
-                .in_phones = in_phones,
-                .in_uuids = in_uuids,
-                .in_phone_count = j_in_phone_count,
-            };
+    void *in_phones = NULL;
+    void *in_uuids  = NULL;
 
-            sgx_status_t stop_res;
-            sgx_status_t stop_ecall_res =
-                sgxsd_enclave_server_stop(enclave_id, &stop_res, &sabd_stop_args, server_state);
+    jlong j_in_phones_capacity = 0;
+    jlong j_in_uuids_capacity  = 0;
 
-            if (stop_ecall_res == SGX_SUCCESS) {
-                if (stop_res == SGX_SUCCESS) {
-                    return;
-                } else {
-                    sgxsd_jni_throw_sgxsd_exception(env, "server_stop_fail", stop_res);
-                    return;
-                }
+    if (j_in_phones != NULL) {
+        in_phones            = (*env)->GetDirectBufferAddress(env, j_in_phones);
+        j_in_phones_capacity = (*env)->GetDirectBufferCapacity(env, j_in_phones);
+    }
+    if (j_in_uuids != NULL) {
+        in_uuids            = (*env)->GetDirectBufferAddress(env, j_in_uuids);
+        j_in_uuids_capacity = (*env)->GetDirectBufferCapacity(env, j_in_uuids);
+    }
+    if (j_in_phone_count <= j_in_phones_capacity / ((jlong) sizeof(*(((sabd_stop_args_t *) 0)->in_phones))) &&
+        j_in_phone_count <= j_in_uuids_capacity  / ((jlong) sizeof(*(((sabd_stop_args_t *) 0)->in_uuids)))) {
+        sabd_stop_args_t sabd_stop_args = {
+            .in_phones = in_phones,
+            .in_uuids = in_uuids,
+            .in_phone_count = j_in_phone_count,
+        };
+
+        sgx_status_t stop_res;
+        sgx_status_t stop_ecall_res =
+            sgxsd_enclave_server_stop(enclave_id, &stop_res, &sabd_stop_args, server_state);
+
+        if (stop_ecall_res == SGX_SUCCESS) {
+            if (stop_res == SGX_SUCCESS) {
+                return;
             } else {
-                sgxsd_jni_throw_sgxsd_exception(env, "ecall_fail", stop_ecall_res);
+                sgxsd_jni_throw_sgxsd_exception(env, "server_stop_fail", stop_res);
                 return;
             }
         } else {
-            sgxsd_jni_throw_sgxsd_exception(env, "bad_in_phone_count", 0);
+            sgxsd_jni_throw_sgxsd_exception(env, "ecall_fail", stop_ecall_res);
             return;
         }
     } else {
-        sgxsd_jni_throw_sgxsd_exception(env, "bad_in_phones", 0);
-        return;
+      sgxsd_jni_throw_sgxsd_exception(env, "bad_in_phone_count", 0);
+      return;
     }
 }
 

@@ -71,7 +71,7 @@ _Static_assert(sizeof(sabd_stop_args_t) == sizeof(uint64_t) + sizeof(uint64_t) +
 //
 
 typedef enum sabd_status_code {
-    SABD_ERROR_RATE_LIMIT_EXCEEDED = SGX_MK_ERROR(0x20001),
+    SABD_ERROR_INVALID_REQUEST_SIZE = SGX_MK_ERROR(0x20001),
 } sabd_status_code_t;
 
 #endif
