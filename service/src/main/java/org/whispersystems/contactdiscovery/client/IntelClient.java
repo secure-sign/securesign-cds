@@ -69,7 +69,7 @@ public class IntelClient {
 
   public byte[] getSignatureRevocationList(long gid) {
     String encodedRevocationList = client.target(host)
-                                         .path(String.format("/attestation/sgx/v3/sigrl/%08x", gid))
+                                         .path(String.format("/attestation/v3/sigrl/%08x", gid))
                                          .request()
                                          .header("Ocp-Apim-Subscription-Key", this.iasSecretKey)
                                          .get(String.class);
@@ -84,7 +84,7 @@ public class IntelClient {
   public QuoteSignatureResponse getQuoteSignature(byte[] quote) throws QuoteVerificationException, StaleRevocationListException {
     try {
       Response response = client.target(host)
-                                .path("/attestation/sgx/v3/report")
+                                .path("/attestation/v3/report")
                                 .request(MediaType.APPLICATION_JSON)
                                 .header("Ocp-Apim-Subscription-Key", this.iasSecretKey)
                                 .post(Entity.json(new QuoteSignatureRequest(quote)));
